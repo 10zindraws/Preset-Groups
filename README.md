@@ -4,7 +4,18 @@ Tired of renaming brush presets to simply reorder them in their tag? This plugin
 
 https://github.com/user-attachments/assets/584475db-c578-4eb0-84fe-67eeb101134b
 
+#### Features:
+* Drag to reorder brushes and groups
+* Multi select + drag to move many brushes or groups
+* Slider to adjust brush thumbnail size in the plugin
+* Easily renamable groups
+* Cycle through brushes left or right
+* Option to display brush preset names
+* Current brush size slider
+
 ## Usage
+
+This plugin is essentially a workaround to krita's brush management. You add brush presets to Preset Groups and are free to organize them as you wish within the plugin.
 
 #### Plugin Actions
 |&nbsp;|&nbsp;|
