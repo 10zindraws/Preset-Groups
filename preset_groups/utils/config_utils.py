@@ -1,0 +1,113 @@
+"""Configuration utilities for accessing common settings.
+
+Provides cached access to configuration values with lazy loading.
+"""
+
+from .data_manager import check_common_config
+
+# Module-level cache for configuration
+_config_cache = None
+
+
+def get_common_config() -> dict:
+    """Get common configuration, cached for performance."""
+    global _config_cache
+    if _config_cache is None:
+        _config_cache = check_common_config()
+    return _config_cache
+
+
+def reload_config() -> dict:
+    """Clear cache and reload configuration from disk."""
+    global _config_cache
+    _config_cache = None
+    return get_common_config()
+
+
+def _get_layout_value(key: str, default):
+    """Get a value from the layout section of config."""
+    return get_common_config().get("layout", {}).get(key, default)
+
+
+def _get_shortcut_value(key: str, default):
+    """Get a value from the shortcut section of config."""
+    return get_common_config().get("shortcut", {}).get(key, default)
+
+
+def get_spacing_between_buttons() -> int:
+    """Get spacing between buttons from config."""
+    return _get_layout_value("spacing_between_buttons", 1)
+
+
+def get_spacing_between_grids() -> int:
+    """Get spacing between grids from config."""
+    return _get_layout_value("spacing_between_grids", 1)
+
+
+def get_brush_icon_size() -> int:
+    """Get brush icon size from config."""
+    return _get_layout_value("brush_icon_size", 65)
+
+
+def get_display_brush_names() -> bool:
+    """Get whether brush names should be displayed below icons."""
+    return _get_layout_value("display_brush_names", True)
+
+
+def get_choose_left_key() -> str:
+    """Get the keyboard shortcut for choosing left brush in grid."""
+    return _get_shortcut_value("choose_left_in_grid", ",")
+
+
+def get_choose_right_key() -> str:
+    """Get the keyboard shortcut for choosing right brush in grid."""
+    return _get_shortcut_value("choose_right_in_grid", ".")
+
+
+def get_wrap_around_navigation() -> bool:
+    """Get whether wrap-around navigation is enabled."""
+    return _get_shortcut_value("wrap_around_navigation", True)
+
+
+def get_font_px(font_size_str: str) -> int:
+    """Convert font size string (e.g., '12px') to integer pixels."""
+    try:
+        return int(str(font_size_str).replace("px", ""))
+    except (ValueError, TypeError):
+        return 12
+
+
+# Brush name label sizing constants
+_BRUSH_NAME_MIN_FONT_SIZE = 7
+_BRUSH_NAME_MAX_FONT_SIZE = 12
+_BRUSH_NAME_BASE_FONT_SIZE = 9
+_BRUSH_NAME_REFERENCE_ICON_SIZE = 65  # Reference icon size for scaling
+
+
+def get_brush_name_font_size() -> int:
+    """Calculate font size for brush names based on icon size.
+    
+    Scales proportionally with brush_icon_size slider, clamped between
+    min and max thresholds for readability.
+    """
+    icon_size = get_brush_icon_size()
+    # Scale proportionally from reference size
+    scale_factor = icon_size / _BRUSH_NAME_REFERENCE_ICON_SIZE
+    calculated_size = int(_BRUSH_NAME_BASE_FONT_SIZE * scale_factor)
+    # Clamp between min and max
+    return max(_BRUSH_NAME_MIN_FONT_SIZE, min(_BRUSH_NAME_MAX_FONT_SIZE, calculated_size))
+
+
+def get_brush_name_label_height(lines: int = 1) -> int:
+    """Calculate height for brush name label based on number of lines.
+    
+    Args:
+        lines: Number of text lines (1 or 2)
+    
+    Returns:
+        Height in pixels for the name label area
+    """
+    font_size = get_brush_name_font_size()
+    line_height = int(font_size * 1.3)  # Line height multiplier
+    padding = 4  # Top + bottom padding
+    return (line_height * lines) + padding
