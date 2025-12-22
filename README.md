@@ -19,13 +19,13 @@ This plugin is essentially a workaround to krita's brush management. You add bru
 
 #### Plugin Actions
 
-* **Left-click** - Select brush or group 
-* **Left-click+Drag** - Move brushes or groups 
-* **Right-click** - Open Remove menu (Brushes)<br>Open Rename/Delete menu (Groups)
-* **Alt + Right-click** - Open Rename menu (Groups)
-* **Hold Ctrl+Click** - Multi-select brushes or groups
-* **Hold Shift+Click** - Range-select brushes or groups
-* **Ctrl + Shift + Alt + Right-click** - Delete group
+* **Left-click** = Select brush or group 
+* **Left-click+Drag** = Move brushes or groups 
+* **Right-click** = Open menu for brush(es) or group(s)
+* **Alt + Right-click** = Open group rename menu
+* **Hold Ctrl+Click** = Multi-select brushes or groups
+* **Hold Shift+Click** = Range-select brushes or groups
+* **Ctrl + Shift + Alt + Right-click** = Delete group
 
 #### Rebindable Shortcuts
 
