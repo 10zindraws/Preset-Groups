@@ -3,6 +3,7 @@
 Provides mixin class for creating styled icon buttons used in the docker UI.
 """
 
+import os
 from krita import Krita  # type: ignore
 from PyQt5.QtWidgets import QPushButton
 from PyQt5.QtCore import Qt, QSize
@@ -10,13 +11,16 @@ from PyQt5.QtGui import QPixmap, QPainter, QColor, QPen, QIcon
 
 from ..utils.styles import docker_btn_style
 
+# Path to custom icons in the ui folder
+_UI_DIR = os.path.dirname(__file__)
+
 
 class IconButtonFactoryMixin:
     """Mixin class providing icon button creation functionality for the docker widget."""
     
     def _apply_button_style(self, button, icon_name):
         """Apply appropriate style to button based on icon name"""
-        if icon_name in ("addlayer", "folder", "settings-button", "deletelayer"):
+        if icon_name in ("addbrushicon", "folder", "settings-button", "deletelayer"):
             button.setStyleSheet(
                 """
                 QPushButton {
@@ -54,40 +58,40 @@ class IconButtonFactoryMixin:
     def _calculate_icon_size(self, icon_name, button_size):
         """Calculate icon size with special adjustments for specific icons"""
         base_icon_size = button_size - 4
-        if icon_name == "addlayer":
-            return max(8, base_icon_size - 7)
+        if icon_name == "addbrushicon":
+            return max(8, base_icon_size - 8)  # Smaller icon for Add Brush button
         if icon_name == "folder":
             return max(8, base_icon_size - 2)
         if icon_name == "deletelayer":
             return max(8, base_icon_size - 5)
         return base_icon_size
 
-    def _create_addlayer_icon(self, scaled_pixmap, button_size):
-        """Create composed icon for addlayer button with rectangle border"""
-        composed = QPixmap(button_size, button_size)
-        composed.fill(Qt.transparent)
-        painter = QPainter(composed)
-        painter.setRenderHint(QPainter.Antialiasing, True)
-
-        target_rect = scaled_pixmap.rect()
-        target_rect.moveCenter(composed.rect().center())
-        target_rect.translate(2, 2)
-        painter.drawPixmap(target_rect.topLeft(), scaled_pixmap)
-
-        pen = QPen(QColor("#d2d2d2"))
-        pen.setWidth(1)
-        painter.setPen(pen)
-        painter.setBrush(Qt.NoBrush)
-        margin = 6
-        rect_size = button_size - 2 * margin - 1
-        painter.drawRect(margin, margin, rect_size, rect_size)
-        painter.end()
-
-        return QIcon(composed)
+    def _load_custom_icon(self, icon_name):
+        """Load a custom PNG icon from the ui folder"""
+        icon_path = os.path.join(_UI_DIR, f"{icon_name}.png")
+        if os.path.exists(icon_path):
+            pixmap = QPixmap(icon_path)
+            if not pixmap.isNull():
+                return pixmap
+        return None
 
     def _load_and_set_icon(self, button, icon_name, button_size, icon_size):
-        """Load icon from Krita and set it on the button"""
+        """Load icon from custom file or Krita and set it on the button"""
         try:
+            # Try loading custom icon first
+            custom_pixmap = self._load_custom_icon(icon_name)
+            if custom_pixmap:
+                scaled_pixmap = custom_pixmap.scaled(
+                    icon_size,
+                    icon_size,
+                    Qt.KeepAspectRatio,
+                    Qt.SmoothTransformation,
+                )
+                button.setIcon(QIcon(scaled_pixmap))
+                button.setIconSize(QSize(icon_size, icon_size))
+                return
+
+            # Fall back to Krita's built-in icons
             app = Krita.instance()
             icon = app.icon(icon_name)
             if not icon or icon.isNull():
@@ -106,15 +110,9 @@ class IconButtonFactoryMixin:
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation,
             )
-
-            if icon_name == "addlayer":
-                composed_icon = self._create_addlayer_icon(scaled_pixmap, button_size)
-                button.setIcon(composed_icon)
-                button.setIconSize(QSize(button_size, button_size))
-            else:
-                high_res_icon = QIcon(scaled_pixmap)
-                button.setIcon(high_res_icon)
-                button.setIconSize(QSize(icon_size, icon_size))
+            high_res_icon = QIcon(scaled_pixmap)
+            button.setIcon(high_res_icon)
+            button.setIconSize(QSize(icon_size, icon_size))
         except Exception as e:
             print(f"Error loading icon '{icon_name}': {e}")
 

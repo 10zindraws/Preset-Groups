@@ -4,6 +4,7 @@ Provides a minimalistic Photoshop-style settings interface with
 organized sections for shortcuts, appearance, and navigation options.
 """
 
+import os
 import json
 from PyQt5.QtWidgets import (
     QDialog,
@@ -18,7 +19,11 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
 )
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QPixmap
 from krita import Krita
+
+# Path to custom icons in the ui folder
+_UI_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ui")
 
 
 # Style constants for Photoshop-like minimalistic UI
@@ -214,10 +219,10 @@ class CommonConfigDialog(QDialog):
         add_brush_val = shortcut_config.get("add_brush_to_grid", "W")
         self._add_brush_key_original = add_brush_val
         layout.addLayout(self._create_shortcut_row(
-            "Add Brush",
+            "Add Brush to Group",
             "shortcut", "add_brush_to_grid",
             add_brush_val,
-            "addlayer"
+            "addbrushicon"
         ))
         
         # Choose Previous
@@ -252,6 +257,15 @@ class CommonConfigDialog(QDialog):
             "wrap_around_navigation",
             wrap_value,
             "reload-preset"
+        ))
+        
+        # Exclusive Uncollapse toggle
+        exclusive_value = layout_config.get("exclusive_uncollapse", False)
+        layout.addLayout(self._create_toggle_row(
+            "Exclusive Uncollapse",
+            "exclusive_uncollapse",
+            exclusive_value,
+            "collapse-all"
         ))
         
         # Spacer
@@ -316,9 +330,23 @@ class CommonConfigDialog(QDialog):
         # Icon (optional)
         if icon_name:
             icon_label = QLabel()
-            icon = Krita.instance().icon(icon_name)
-            if icon and not icon.isNull():
-                icon_label.setPixmap(icon.pixmap(14, 14))
+            pixmap = None
+            
+            # Try loading custom icon first
+            custom_icon_path = os.path.join(_UI_DIR, f"{icon_name}.png")
+            if os.path.exists(custom_icon_path):
+                custom_pixmap = QPixmap(custom_icon_path)
+                if not custom_pixmap.isNull():
+                    pixmap = custom_pixmap.scaled(14, 14, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            
+            # Fall back to Krita's built-in icons
+            if pixmap is None:
+                icon = Krita.instance().icon(icon_name)
+                if icon and not icon.isNull():
+                    pixmap = icon.pixmap(14, 14)
+            
+            if pixmap:
+                icon_label.setPixmap(pixmap)
                 icon_label.setFixedSize(16, 16)
                 hlayout.addWidget(icon_label)
         
@@ -399,6 +427,8 @@ class CommonConfigDialog(QDialog):
             self.wrap_around_btn = toggle
         elif key == "display_brush_names":
             self.display_names_btn = toggle
+        elif key == "exclusive_uncollapse":
+            self.exclusive_uncollapse_btn = toggle
         
         return hlayout
 
@@ -423,6 +453,7 @@ class CommonConfigDialog(QDialog):
             "layout": {
                 "spacing_between_buttons": 1,
                 "display_brush_names": True,
+                "exclusive_uncollapse": False,
             },
         }
         for section, defaults in default_sections.items():
@@ -496,6 +527,10 @@ class CommonConfigDialog(QDialog):
         # Save display brush names toggle
         if hasattr(self, 'display_names_btn'):
             self.config["layout"]["display_brush_names"] = self.display_names_btn.isChecked()
+        
+        # Save exclusive uncollapse toggle
+        if hasattr(self, 'exclusive_uncollapse_btn'):
+            self.config["layout"]["exclusive_uncollapse"] = self.exclusive_uncollapse_btn.isChecked()
         
         # Save edits to config
         for (section, key), edit in self.fields.items():

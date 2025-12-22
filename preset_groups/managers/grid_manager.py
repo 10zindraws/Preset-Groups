@@ -162,16 +162,56 @@ class GridManagerMixin:
         grid_widget.setVisible(has_brushes and not is_collapsed)
 
     def toggle_grid_collapse(self, grid_info):
-        """Toggle collapse state of a grid"""
-        grid_info["is_collapsed"] = not grid_info.get("is_collapsed", False)
-        collapse_button = grid_info.get("collapse_button")
+        """Toggle collapse state of a grid.
         
+        In exclusive uncollapse mode, only one grid can be uncollapsed at a time.
+        The uncollapsed grid becomes the active_grid.
+        """
+        from ..utils.config_utils import get_exclusive_uncollapse
+        
+        is_currently_collapsed = grid_info.get("is_collapsed", False)
+        new_collapsed_state = not is_currently_collapsed
+        
+        if get_exclusive_uncollapse():
+            if new_collapsed_state:
+                # Collapsing this grid
+                grid_info["is_collapsed"] = True
+                self._update_collapse_button_icon(grid_info)
+                self.update_grid_visibility(grid_info)
+                
+                # Check if all grids are now collapsed
+                all_collapsed = all(g.get("is_collapsed", False) for g in self.grids)
+                if all_collapsed:
+                    # Deselect active_grid when all are collapsed
+                    self._clear_active_grid_highlight()
+            else:
+                # Uncollapsing this grid - collapse all others first
+                for other_grid in self.grids:
+                    if other_grid != grid_info and not other_grid.get("is_collapsed", False):
+                        other_grid["is_collapsed"] = True
+                        self._update_collapse_button_icon(other_grid)
+                        self.update_grid_visibility(other_grid)
+                
+                # Now uncollapse the target grid
+                grid_info["is_collapsed"] = False
+                self._update_collapse_button_icon(grid_info)
+                self.update_grid_visibility(grid_info)
+                
+                # Set this grid as active
+                self.set_active_grid(grid_info)
+        else:
+            # Normal mode - just toggle
+            grid_info["is_collapsed"] = new_collapsed_state
+            self._update_collapse_button_icon(grid_info)
+            self.update_grid_visibility(grid_info)
+    
+    def _update_collapse_button_icon(self, grid_info):
+        """Update the collapse button icon for a grid."""
+        collapse_button = grid_info.get("collapse_button")
         if collapse_button:
             button_height = collapse_button.height()
             icon_size = button_height - 8
             self._set_collapse_button_icon(collapse_button, grid_info["is_collapsed"], icon_size)
-        
-        self.update_grid_visibility(grid_info)
 
     def _get_next_group_number(self):
         """Calculate the next available group number."""

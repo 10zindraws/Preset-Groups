@@ -267,7 +267,7 @@ class PresetGroupsDocker(
         button_layout.addSpacerItem(QSpacerItem(45, 0, QSizePolicy.Fixed, QSizePolicy.Minimum))
 
         # Add Brush button
-        self.add_brush_button = self.create_icon_button("addlayer", self.add_current_brush)
+        self.add_brush_button = self.create_icon_button("addbrushicon", self.add_current_brush)
         button_layout.addWidget(self.add_brush_button)
         button_layout.addSpacerItem(QSpacerItem(2, 0, QSizePolicy.Fixed, QSizePolicy.Minimum))
 

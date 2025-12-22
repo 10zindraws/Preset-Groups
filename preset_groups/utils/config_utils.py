@@ -69,6 +69,15 @@ def get_wrap_around_navigation() -> bool:
     return _get_shortcut_value("wrap_around_navigation", True)
 
 
+def get_exclusive_uncollapse() -> bool:
+    """Get whether exclusive uncollapse mode is enabled.
+    
+    When enabled, only one group can be uncollapsed at a time.
+    The uncollapsed group becomes the active_grid.
+    """
+    return _get_layout_value("exclusive_uncollapse", False)
+
+
 def get_font_px(font_size_str: str) -> int:
     """Convert font size string (e.g., '12px') to integer pixels."""
     try:

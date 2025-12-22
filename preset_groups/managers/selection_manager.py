@@ -78,7 +78,16 @@ class SelectionManagerMixin:
         self._clear_active_grid_highlight()
     
     def _clear_active_grid_highlight(self):
-        """Clear the active grid highlight state."""
+        """Clear the active grid highlight state.
+        
+        If only one grid exists, keep it as the active grid instead of clearing.
+        """
+        # When only one grid exists, it should always remain active
+        if len(self.grids) == 1:
+            if not self.active_grid or self.active_grid != self.grids[0]:
+                self.set_active_grid(self.grids[0])
+            return
+        
         if self.active_grid:
             # Reset the active grid's highlight to inactive style
             self.active_grid["is_active"] = False

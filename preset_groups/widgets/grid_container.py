@@ -36,8 +36,8 @@ class ClickableGridWidget(QWidget):
             # Check if clicking on empty space (not on a button)
             widget_under_mouse = self.childAt(event.pos())
             if not widget_under_mouse or not hasattr(widget_under_mouse, "preset"):
-                # Clicked outside buttons - deselect all
-                self.parent_docker.clear_selection()
+                # Clicked on grid area - set this grid as active
+                self.parent_docker.set_active_grid(self.grid_info)
         elif event.button() == Qt.RightButton:
             # Right-click outside buttons - deselect all
             widget_under_mouse = self.childAt(event.pos())
