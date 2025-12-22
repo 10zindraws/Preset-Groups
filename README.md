@@ -41,6 +41,8 @@ This plugin is essentially a workaround to krita's brush management. You add bru
 **Brush size slider not reaching your max brush size?**
 >Hold  ]  until you reach max brush size or click the plugin's settings button to define it there. By default Krita's max brush size is set to 1000px. You can check your set max brush is via Settings -> Configure Krita -> General --> Miscellaneous
 
+---  
+
 ## Installation
 
 **Download the plugin:**
@@ -51,6 +53,13 @@ This plugin is essentially a workaround to krita's brush management. You add bru
 
 **Restart Krita:**
 >Close and open Krita
+
+### Backup
+
+If you want to preserve your brushes, groups, and bindings before updating the plugin:<br>
+  
+> **Windows:** Win + R > type "Appdata" > Roaming > Krita > pykrita > preset_groups > **config <-- save this folder!**<br>
+> **Linux:** ~/.local/share/krita/pykrita/preset_groups/**config <-- save this folder!**
 
 ---
 
