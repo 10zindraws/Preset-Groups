@@ -1,41 +1,52 @@
 # Preset Groups
-Preset Groups is a Krita plugin that allows artists to flexibly organize their brushes into groups with drag &amp; drop. No more renaming brushes and dealing with tags!
 
-## 🖱️ Mouse Actions
+Tired of renaming brush presets to simply reorder them in their tag? This plugin aims to fix that issue and make Krita's brush management more convenient for artists that are used to Photoshop and Clip Studio Paint.
 
-#### Brushes
-| Action | Result |
+https://github.com/user-attachments/assets/584475db-c578-4eb0-84fe-67eeb101134b
+
+## Usage
+
+#### Plugin Actions
+|&nbsp;|&nbsp;|
 |--------|--------|
-| **Left-click** | Select brush |
-| **Right-click** | Open remove option |
-| **Hold Ctrl+Click** | Multi-select brushes |
-| **Hold Shift+Click** | Range-select brushes |
-| **Hold Left-click+Drag** | Reorder brush(es) |
+| **Left-click** | Select brush or group |
+| **Left-click+Drag** | Move brushes or groups |
+| **Right-click** | Open Remove menu (Brushes)<br>Open Rename/Delete menu (Groups) |
+| **Alt + Right-click** | Open Rename menu (Groups) |
+| **Hold Ctrl+Click** | Multi-select brushes or groups|
+| **Hold Shift+Click** | Range-select brushes or groups |
+| **Ctrl + Shift + Alt + Right-click** | Delete group |
 
-#### Groups
-| Action | Result |
-|--------|--------|
-| **Left-click** | Make group active |
-| **Double-click** | Rename |
-| **Right-click** | Rename/Delete menu |
-| **Hold Ctrl+Click** | Multi-select groups |
-| **Hold Shift+Click** | Range-select groups |
-| **Hold Left-click+Drag** | Reorder group(s) |
 
-$~~~~~~~~~~~$
-## ⌨️ Default Keyboard Shortcuts
-| Key | Action |
+#### Rebindable Shortcuts
+|&nbsp;|&nbsp;|
 |-----|--------|
-| **W** | Add current brush to active group |
-| **,** | Previous brush in group |
-| **.** | Next brush in group |
+| **W** | Add brush to group |
+| **,** | Select previous brush |
+| **.** | Select next brush |
 
 ---
 
-## Problems with the plugin?
-
-1. **Check if the plugin's shortcuts conflict with Krita**
+**Check if the plugin's shortcuts conflict with Krita**
 >Click the plugin's settings button and rebind there or rebind Krita's shortcuts: Settings -> Configure Krita -> Keyboard Shortcuts
 
-2. **Brush size slider not reaching your max brush size?**
+**Brush size slider not reaching your max brush size?**
 >Hold  ]  until you reach max brush size or click the plugin's settings button to define it there. By default Krita's max brush size is set to 1000px. You can check your set max brush is via Settings -> Configure Krita -> General --> Miscellaneous
+
+## Installation
+
+**Download the plugin:**
+>Scroll up and click the green "Code" button, click  "Download ZIP" option
+ 
+**Open Krita and in the top bar click:**
+>**Tools  > Scripts > Import Python Plugin From File >** select the zip file
+
+**Restart Krita:**
+>Close and open Krita
+
+---
+
+## Acknlowledgement
+
+Thank you Toma_Omito for creating [Quick Access Manager](https://github.com/udtren/krita-quick-access-manager) <br>
+Preset Groups is a heavily modified fork of the "Quick Brush Sets" docker from their plugin
