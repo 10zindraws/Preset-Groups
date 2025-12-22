@@ -54,7 +54,7 @@ This plugin is essentially a workaround to krita's brush management. You add bru
 
 ---
 
-## Acknlowledgement
+## Acknowledgement
 
 Thank you [Toma_Omito](https://github.com/udtren) for creating [Quick Access Manager](https://github.com/udtren/krita-quick-access-manager) <br>
 Preset Groups is a heavily modified fork of the "Quick Brush Sets" docker from their plugin
