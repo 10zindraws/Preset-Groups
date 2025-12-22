@@ -48,5 +48,5 @@ https://github.com/user-attachments/assets/584475db-c578-4eb0-84fe-67eeb101134b
 
 ## Acknlowledgement
 
-Thank you Toma_Omito for creating [Quick Access Manager](https://github.com/udtren/krita-quick-access-manager) <br>
+Thank you [Toma_Omito](https://github.com/udtren) for creating [Quick Access Manager](https://github.com/udtren/krita-quick-access-manager) <br>
 Preset Groups is a heavily modified fork of the "Quick Brush Sets" docker from their plugin
