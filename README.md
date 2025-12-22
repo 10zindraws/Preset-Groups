@@ -18,23 +18,20 @@ https://github.com/user-attachments/assets/584475db-c578-4eb0-84fe-67eeb101134b
 This plugin is essentially a workaround to krita's brush management. You add brush presets to Preset Groups and are free to organize them as you wish within the plugin.
 
 #### Plugin Actions
-|&nbsp;|&nbsp;|
-|--------|--------|
-| **Left-click** | Select brush or group |
-| **Left-click+Drag** | Move brushes or groups |
-| **Right-click** | Open Remove menu (Brushes)<br>Open Rename/Delete menu (Groups) |
-| **Alt + Right-click** | Open Rename menu (Groups) |
-| **Hold Ctrl+Click** | Multi-select brushes or groups|
-| **Hold Shift+Click** | Range-select brushes or groups |
-| **Ctrl + Shift + Alt + Right-click** | Delete group |
 
+* **Left-click** - Select brush or group 
+* **Left-click+Drag** - Move brushes or groups 
+* **Right-click** - Open Remove menu (Brushes)<br>Open Rename/Delete menu (Groups)
+* **Alt + Right-click** - Open Rename menu (Groups)
+* **Hold Ctrl+Click** - Multi-select brushes or groups
+* **Hold Shift+Click** - Range-select brushes or groups
+* **Ctrl + Shift + Alt + Right-click** - Delete group
 
 #### Rebindable Shortcuts
-|&nbsp;|&nbsp;|
-|-----|--------|
-| **W** | Add brush to group |
-| **,** | Select previous brush |
-| **.** | Select next brush |
+
+* **W** - Add brush to group
+* **,** - Select previous brush
+* **.** - Select next brush
 
 ---
 
