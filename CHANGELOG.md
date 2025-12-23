@@ -1,6 +1,12 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [1.0.4] - 2025-12-23
+
+### Changed
+
+- Lowered `setMinimumWidth` in `preset_groups.py` to let users make the docker even smaller for compact setups
+
 ## [1.0.3] - 2025-12-22
 
 ### Changed
@@ -21,4 +27,3 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - When only group exists, automatically set/kept it as the active group so it can't be deselected.
-
