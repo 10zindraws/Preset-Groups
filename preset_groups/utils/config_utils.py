@@ -3,7 +3,7 @@
 Provides cached access to configuration values with lazy loading.
 """
 
-from .data_manager import check_common_config
+from .data_manager import check_common_config, invalidate_common_config_cache
 
 # Module-level cache for configuration
 _config_cache = None
@@ -21,6 +21,8 @@ def reload_config() -> dict:
     """Clear cache and reload configuration from disk."""
     global _config_cache
     _config_cache = None
+    # Also invalidate the data_manager cache
+    invalidate_common_config_cache()
     return get_common_config()
 
 

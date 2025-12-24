@@ -2,6 +2,10 @@
 
 Provides mixin class for handling grid-related operations like adding,
 removing, renaming, collapsing, and reordering grids.
+
+PERFORMANCE OPTIMIZATIONS:
+- Batch UI updates with setUpdatesEnabled()
+- Efficient grid layout rebuilding
 """
 
 import re
@@ -471,10 +475,26 @@ class GridManagerMixin:
         self.save_grids_data()
 
     def _update_all_grids_on_resize(self):
-        """Update all grids with recalculated column count"""
-        for grid_info in self.grids:
-            if grid_info.get("layout") and grid_info.get("brush_presets"):
-                self.update_grid(grid_info)
+        """Update all grids with recalculated column count.
+        
+        PERFORMANCE: Uses batch updates to minimize repaints.
+        """
+        # Skip if no grids
+        if not self.grids:
+            return
+        
+        # Disable updates during batch operation
+        if hasattr(self, 'main_widget') and self.main_widget:
+            self.main_widget.setUpdatesEnabled(False)
+        
+        try:
+            for grid_info in self.grids:
+                if grid_info.get("layout") and grid_info.get("brush_presets"):
+                    self.update_grid(grid_info)
+        finally:
+            # Re-enable updates
+            if hasattr(self, 'main_widget') and self.main_widget:
+                self.main_widget.setUpdatesEnabled(True)
 
     # --- Grid Drag & Drop Support ---
     

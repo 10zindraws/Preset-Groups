@@ -12,6 +12,14 @@ The docker inherits from multiple mixins to organize functionality:
 - IconButtonFactoryMixin: Icon button creation
 - GridUpdateMixin: Grid layout updates
 - NameButtonEventsMixin: Grid name button events
+
+PERFORMANCE OPTIMIZATIONS:
+- Signal-based brush change detection (replaces polling when possible)
+- Cached active view/window references
+- Widget reuse instead of recreation
+- Batch UI updates with signal blocking
+- Deferred thumbnail loading until docker is visible
+- Visibility-aware timer pausing
 """
 
 import os
@@ -55,11 +63,16 @@ from .ui.name_button_events import NameButtonEventsMixin
 
 
 # Timer intervals (ms)
-_BRUSH_CHECK_INTERVAL = 500
-_THUMBNAIL_CHECK_INTERVAL = 2000
-_BRUSH_POLL_INTERVAL = 30
-_RESIZE_DEBOUNCE = 50
-_SAVE_DEBOUNCE = 100  # Debounce for save operations
+# Note: Intervals tuned for immediate thumbnail detection
+# These are FALLBACK intervals - signals are preferred when available
+_BRUSH_CHECK_INTERVAL = 1000  # Increased since signals handle most cases
+_THUMBNAIL_CHECK_INTERVAL = 2000  # Fast interval for immediate thumbnail detection
+_BRUSH_POLL_INTERVAL = 150  # Brush size polling (no signal available for this)
+_RESIZE_DEBOUNCE = 75  # Slightly increased for smoother resize
+_SAVE_DEBOUNCE = 200  # Debounce for save operations
+_THUMBNAIL_CACHE_CHUNK_SIZE = 5  # Larger chunks for faster initial caching
+_DEFERRED_INIT_DELAY = 100  # Delay before starting deferred initialization
+_VISIBILITY_SETTLE_DELAY = 50  # Delay after becoming visible before processing
 
 # Slider stylesheet
 _SLIDER_STYLE = """
@@ -96,7 +109,8 @@ class PresetGroupsDocker(
         self._init_state()
         self._init_config_paths()
         self._load_data()
-        self._setup_timers()
+        self._setup_krita_signals()  # Connect to Krita signals first
+        self._setup_timers()  # Fallback timers (start paused)
         self.setup_brush_preset_save_monitor()
         self.max_brush_size = self.get_max_brush_size_from_config()
         self.init_ui()
@@ -119,6 +133,24 @@ class PresetGroupsDocker(
         self.preset_thumbnail_cache = {}
         self._save_pending = False
         self._grids_pending_update = set()
+        
+        # Cached references (refreshed on relevant signals)
+        self._cached_view = None
+        self._cached_window = None
+        self._cached_preset_dict = None
+        self._preset_dict_dirty = True  # Flag to refresh preset dict lazily
+        
+        # Signal connection state
+        self._signals_connected = False
+        self._window_signals_connected = False
+        
+        # Visibility and initialization state
+        self._docker_was_visible = False
+        self._initialization_complete = False
+        self._deferred_init_pending = False
+        
+        # Timer state tracking (for pause/resume)
+        self._timers_paused = False
 
     def _init_config_paths(self):
         """Setup configuration file paths."""
@@ -129,23 +161,241 @@ class PresetGroupsDocker(
         self.common_config_path = os.path.join(config_dir, "common.json")
 
     def _load_data(self):
-        """Load preset resources and grid data."""
-        self.preset_dict = Krita.instance().resources("preset")
+        """Load preset resources and grid data.
+        
+        Uses lazy loading for preset dictionary to avoid expensive
+        resource scanning at startup.
+        """
+        # Get preset dict (cached after first call)
+        self.preset_dict = self._get_preset_dict()
         self.grids, self.grid_counter = load_grids_data(
             self.data_file, self.preset_dict
         )
         self.setup_add_brush_shortcut()
         QApplication.instance().installEventFilter(self)
+    
+    def _get_preset_dict(self):
+        """Get preset dictionary with caching.
+        
+        Only refreshes from Krita when marked dirty (e.g., after resource changes).
+        """
+        if self._preset_dict_dirty or self._cached_preset_dict is None:
+            self._cached_preset_dict = Krita.instance().resources("preset")
+            self._preset_dict_dirty = False
+        return self._cached_preset_dict
+    
+    def _invalidate_preset_cache(self):
+        """Mark preset cache as dirty, forcing refresh on next access."""
+        self._preset_dict_dirty = True
+        self._cached_preset_dict = None
+    
+    def _setup_krita_signals(self):
+        """Connect to Krita's native signals for efficient event handling.
+        
+        Uses signals instead of polling where available:
+        - windowCreated: For deferred window-specific signal connections
+        - Notifier signals for resource changes
+        """
+        try:
+            app = Krita.instance()
+            notifier = app.notifier()
+            
+            # Connect to window creation for view-specific signals
+            notifier.windowCreated.connect(self._on_window_created)
+            
+            # Resource change signals (invalidate caches)
+            if hasattr(notifier, 'resourceChanged'):
+                notifier.resourceChanged.connect(self._on_resource_changed)
+            
+            self._signals_connected = True
+            
+            # If window already exists, connect immediately
+            if app.activeWindow():
+                QTimer.singleShot(_DEFERRED_INIT_DELAY, self._connect_window_signals)
+                
+        except Exception as e:
+            # Fallback to timer-based approach if signals fail
+            self._signals_connected = False
+    
+    def _on_window_created(self):
+        """Handle window creation - connect window-specific signals."""
+        QTimer.singleShot(_DEFERRED_INIT_DELAY, self._connect_window_signals)
+    
+    def _connect_window_signals(self):
+        """Connect to window and view signals for brush change detection."""
+        if self._window_signals_connected:
+            return
+            
+        try:
+            app = Krita.instance()
+            window = app.activeWindow()
+            if not window:
+                return
+            
+            # Cache window reference
+            self._cached_window = window
+            
+            # Connect to view change signal if available
+            if hasattr(window, 'activeViewChanged'):
+                window.activeViewChanged.connect(self._on_view_changed)
+            
+            self._window_signals_connected = True
+            
+            # Initial view cache
+            self._update_cached_view()
+            
+        except Exception:
+            pass
+    
+    def _on_view_changed(self):
+        """Handle active view change - update cached view and brush state."""
+        self._update_cached_view()
+        # Check brush when view changes
+        if self._is_docker_visible():
+            self.check_brush_change()
+    
+    def _on_resource_changed(self, resource_type, resource_name):
+        """Handle resource changes from Krita.
+        
+        Invalidates caches and triggers aggressive refresh for preset changes.
+        """
+        if resource_type == "preset" or resource_type == "brushpreset":
+            self._invalidate_preset_cache()
+            # Schedule aggressive thumbnail refresh for this preset
+            if resource_name and self._is_docker_visible():
+                # Get original hash for comparison
+                original_hash = self.preset_thumbnail_cache.get(resource_name)
+                # Use aggressive retry mechanism for immediate detection
+                self._schedule_aggressive_refresh(resource_name, original_hash, 0)
+    
+    def _update_cached_view(self):
+        """Update cached view reference."""
+        try:
+            app = Krita.instance()
+            window = app.activeWindow()
+            if window:
+                self._cached_view = window.activeView()
+                self._cached_window = window
+            else:
+                self._cached_view = None
+        except Exception:
+            self._cached_view = None
 
     def _setup_timers(self):
-        """Setup periodic timers for brush and thumbnail monitoring."""
+        """Setup periodic timers for brush and thumbnail monitoring.
+        
+        Timers start paused and are resumed when docker becomes visible.
+        This saves CPU when the docker is hidden.
+        """
+        # Brush change timer (fallback when signals unavailable)
         self.brush_check_timer = QTimer()
-        self.brush_check_timer.timeout.connect(self.check_brush_change)
-        self.brush_check_timer.start(_BRUSH_CHECK_INTERVAL)
-
+        self.brush_check_timer.timeout.connect(self._safe_check_brush_change)
+        # Don't start yet - will start when docker becomes visible
+        
+        # Thumbnail change timer (fallback detection)
         self.thumbnail_check_timer = QTimer()
-        self.thumbnail_check_timer.timeout.connect(self.check_thumbnail_changes)
-        self.thumbnail_check_timer.start(_THUMBNAIL_CHECK_INTERVAL)
+        self.thumbnail_check_timer.timeout.connect(self._safe_check_thumbnail_changes)
+        # Don't start yet
+        
+        self._timers_paused = True  # Track timer state
+    
+    def _start_timers(self):
+        """Start/resume all periodic timers."""
+        if not self._timers_paused:
+            return
+        
+        self._timers_paused = False
+        
+        if hasattr(self, 'brush_check_timer') and not self.brush_check_timer.isActive():
+            self.brush_check_timer.start(_BRUSH_CHECK_INTERVAL)
+        
+        if hasattr(self, 'thumbnail_check_timer') and not self.thumbnail_check_timer.isActive():
+            self.thumbnail_check_timer.start(_THUMBNAIL_CHECK_INTERVAL)
+        
+        if hasattr(self, 'brush_size_poll_timer') and not self.brush_size_poll_timer.isActive():
+            self.brush_size_poll_timer.start(_BRUSH_POLL_INTERVAL)
+    
+    def _pause_timers(self):
+        """Pause all periodic timers to save CPU when docker is hidden."""
+        if self._timers_paused:
+            return
+        
+        self._timers_paused = True
+        
+        if hasattr(self, 'brush_check_timer'):
+            self.brush_check_timer.stop()
+        
+        if hasattr(self, 'thumbnail_check_timer'):
+            self.thumbnail_check_timer.stop()
+        
+        if hasattr(self, 'brush_size_poll_timer'):
+            self.brush_size_poll_timer.stop()
+
+    def _is_docker_visible(self):
+        """Check if the docker is visible and should process updates.
+        
+        Returns False if docker is hidden/minimized to skip expensive operations.
+        """
+        try:
+            if not self.isVisible():
+                return False
+            # Also check if we have a valid parent window
+            parent = self.parent()
+            if parent and hasattr(parent, 'isVisible') and not parent.isVisible():
+                return False
+            return True
+        except (RuntimeError, AttributeError):
+            return False
+    
+    def showEvent(self, event):
+        """Handle docker becoming visible.
+        
+        Resumes timers and triggers deferred initialization if needed.
+        """
+        super().showEvent(event)
+        
+        # Resume timers when docker becomes visible
+        QTimer.singleShot(_VISIBILITY_SETTLE_DELAY, self._on_became_visible)
+    
+    def _on_became_visible(self):
+        """Called after docker becomes visible and settles."""
+        if not self._is_docker_visible():
+            return
+        
+        # Start/resume timers
+        self._start_timers()
+        
+        # Complete deferred initialization if pending
+        if self._deferred_init_pending and not self._initialization_complete:
+            self._deferred_init_pending = False
+            self._complete_deferred_init()
+        
+        # Refresh view cache and brush state
+        self._update_cached_view()
+        self.check_brush_change()
+        
+        self._docker_was_visible = True
+    
+    def hideEvent(self, event):
+        """Handle docker becoming hidden.
+        
+        Pauses timers to save CPU.
+        """
+        super().hideEvent(event)
+        
+        # Pause timers when docker is hidden
+        self._pause_timers()
+        self._docker_was_visible = False
+
+    def _safe_check_brush_change(self):
+        """Wrapper for check_brush_change with visibility guard."""
+        if self._is_docker_visible():
+            self.check_brush_change()
+
+    def _safe_check_thumbnail_changes(self):
+        """Wrapper for check_thumbnail_changes with visibility guard."""
+        if self._is_docker_visible():
+            self.check_thumbnail_changes()
 
     def save_grids_data(self):
         """Schedule grids data save with debouncing to avoid excessive file writes."""
@@ -160,7 +410,11 @@ class PresetGroupsDocker(
         save_grids_data(self.data_file, self.grids)
 
     def init_ui(self):
-        """Initialize the docker UI layout."""
+        """Initialize the docker UI layout.
+        
+        Uses deferred initialization for expensive operations like
+        thumbnail caching to improve startup time.
+        """
         central_widget = QWidget()
         main_layout = QVBoxLayout()
         main_layout.setAlignment(Qt.AlignTop)
@@ -178,10 +432,63 @@ class PresetGroupsDocker(
         # Initialize brush state
         self.initialize_current_brush()
         self.poll_brush_size()
-        self.cache_all_preset_thumbnails()
+        
+        # Mark deferred init as pending - will complete when docker becomes visible
+        # This avoids expensive thumbnail loading if docker starts hidden
+        if self._is_docker_visible():
+            # Docker is already visible, start deferred init after short delay
+            QTimer.singleShot(_DEFERRED_INIT_DELAY, self._complete_deferred_init)
+        else:
+            # Docker is hidden, defer until it becomes visible
+            self._deferred_init_pending = True
         
         # Schedule initial layout update
-        QTimer.singleShot(100, self._update_all_grids_on_resize)
+        QTimer.singleShot(_DEFERRED_INIT_DELAY, self._update_all_grids_on_resize)
+    
+    def _complete_deferred_init(self):
+        """Complete deferred initialization tasks.
+        
+        Called when docker first becomes visible after startup.
+        """
+        if self._initialization_complete:
+            return
+        
+        self._initialization_complete = True
+        
+        # Start thumbnail caching in background
+        self._start_deferred_thumbnail_caching()
+        
+        # Start timers now that we're visible
+        self._start_timers()
+
+    def _start_deferred_thumbnail_caching(self):
+        """Start deferred thumbnail caching in chunks to avoid blocking UI."""
+        self._thumbnail_cache_queue = []
+        for grid_info in self.grids:
+            for preset in grid_info.get("brush_presets", []):
+                if preset.name() not in self.preset_thumbnail_cache:
+                    self._thumbnail_cache_queue.append(preset)
+        
+        if self._thumbnail_cache_queue:
+            self._process_thumbnail_cache_chunk()
+
+    def _process_thumbnail_cache_chunk(self):
+        """Process a chunk of thumbnails then schedule next chunk."""
+        if not hasattr(self, '_thumbnail_cache_queue') or not self._thumbnail_cache_queue:
+            return
+        
+        # Process a small chunk
+        chunk = self._thumbnail_cache_queue[:_THUMBNAIL_CACHE_CHUNK_SIZE]
+        self._thumbnail_cache_queue = self._thumbnail_cache_queue[_THUMBNAIL_CACHE_CHUNK_SIZE:]
+        
+        for preset in chunk:
+            thumbnail_hash = self.get_preset_thumbnail_hash(preset)
+            if thumbnail_hash is not None:
+                self.preset_thumbnail_cache[preset.name()] = thumbnail_hash
+        
+        # Schedule next chunk if more remain
+        if self._thumbnail_cache_queue:
+            QTimer.singleShot(50, self._process_thumbnail_cache_chunk)
 
     def _create_top_row(self, main_layout):
         """Create top controls row with brush size slider and settings."""

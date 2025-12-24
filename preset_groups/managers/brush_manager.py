@@ -2,6 +2,11 @@
 
 Provides mixin class for handling brush-related operations like adding
 brushes, updating brush size, and tracking the current brush preset.
+
+PERFORMANCE OPTIMIZATIONS:
+- Cached active view reference (refreshed via signals)
+- Debounced I/O operations
+- Visibility-aware polling
 """
 
 from krita import Krita  # type: ignore
@@ -32,10 +37,29 @@ class BrushManagerMixin:
     """Mixin class providing brush management functionality for the docker widget."""
     
     def _get_active_view(self):
-        """Get the active view from Krita, or None if unavailable."""
+        """Get the active view from Krita, using cache when available.
+        
+        Uses cached reference when possible, falling back to direct lookup.
+        The cache is updated via Krita signals (see _on_view_changed).
+        """
+        # Try cached view first (faster)
+        if hasattr(self, '_cached_view') and self._cached_view is not None:
+            try:
+                # Verify cached view is still valid
+                if self._cached_view.document() is not None or True:
+                    return self._cached_view
+            except (RuntimeError, AttributeError):
+                # Cached view was deleted, clear it
+                self._cached_view = None
+        
+        # Fallback to direct lookup
         app = Krita.instance()
         if app.activeWindow() and app.activeWindow().activeView():
-            return app.activeWindow().activeView()
+            view = app.activeWindow().activeView()
+            # Update cache
+            if hasattr(self, '_cached_view'):
+                self._cached_view = view
+            return view
         return None
 
     def get_max_brush_size_from_config(self):
@@ -225,7 +249,10 @@ class BrushManagerMixin:
             view.setBrushSize(float(size))
 
     def _auto_expand_max_size(self, current_size):
-        """Expand max brush size if current size exceeds it."""
+        """Expand max brush size if current size exceeds it.
+        
+        Uses debouncing to avoid frequent config file writes.
+        """
         if current_size <= self.max_brush_size:
             return
         
@@ -233,15 +260,40 @@ class BrushManagerMixin:
         if new_max <= self.max_brush_size:
             return
         
+        # Debounce config file writes to avoid I/O overhead
+        self._pending_max_size = new_max
+        self.update_max_brush_size(new_max)  # Update UI immediately
+        
+        if not hasattr(self, '_max_size_save_timer'):
+            from PyQt5.QtCore import QTimer
+            self._max_size_save_timer = QTimer()
+            self._max_size_save_timer.setSingleShot(True)
+            self._max_size_save_timer.timeout.connect(self._save_max_size_to_disk)
+        
+        self._max_size_save_timer.stop()
+        self._max_size_save_timer.start(500)  # Debounce for 500ms
+    
+    def _save_max_size_to_disk(self):
+        """Save the max brush size to disk after debounce delay."""
+        if not hasattr(self, '_pending_max_size'):
+            return
+        
+        new_max = self._pending_max_size
         config = check_common_config()
         if "brush_slider" not in config:
             config["brush_slider"] = {}
         config["brush_slider"]["max_brush_size"] = new_max
         save_common_config(config)
-        self.update_max_brush_size(new_max)
 
     def poll_brush_size(self):
-        """Poll the current brush size from Krita and update top controls."""
+        """Poll the current brush size from Krita and update top controls.
+        
+        Includes visibility check to avoid unnecessary work when docker is hidden.
+        """
+        # Skip polling if docker isn't visible (performance optimization for Linux)
+        if hasattr(self, '_is_docker_visible') and not self._is_docker_visible():
+            return
+        
         view = self._get_active_view()
         if not view:
             return
@@ -318,7 +370,10 @@ class BrushManagerMixin:
             self.update_all_button_highlights()
 
     def check_brush_change(self):
-        """Check if the current brush preset has changed and update highlights."""
+        """Check if the current brush preset has changed and update highlights.
+        
+        Optimized to skip expensive thumbnail refresh unless brush actually changed.
+        """
         view = self._get_active_view()
         if not view:
             return
@@ -327,13 +382,37 @@ class BrushManagerMixin:
         if not current_preset:
             return
         
-        # Check if brush changed
-        if (self.current_selected_preset is None or 
-            current_preset.name() != self.current_selected_preset.name()):
-            self.current_selected_preset = current_preset
-            self.current_selected_button = None
-            self.update_all_button_highlights()
-            self.refresh_buttons_with_same_thumbnail(current_preset)
+        current_name = current_preset.name()
+        
+        # Quick comparison - avoid string comparison if same object
+        if self.current_selected_preset is not None:
+            if self.current_selected_preset is current_preset:
+                return  # Same object, no change
+            if self.current_selected_preset.name() == current_name:
+                return  # Same brush by name, no change
+        
+        # Brush has actually changed
+        self.current_selected_preset = current_preset
+        self.current_selected_button = None
+        self.update_all_button_highlights()
+        
+        # Defer the expensive thumbnail refresh to avoid blocking
+        # Use a debounced timer to handle rapid brush switching
+        if not hasattr(self, '_brush_thumbnail_refresh_timer'):
+            from PyQt5.QtCore import QTimer
+            self._brush_thumbnail_refresh_timer = QTimer()
+            self._brush_thumbnail_refresh_timer.setSingleShot(True)
+            self._brush_thumbnail_refresh_timer.timeout.connect(self._do_deferred_thumbnail_refresh)
+        
+        self._pending_thumbnail_refresh_preset = current_preset
+        self._brush_thumbnail_refresh_timer.stop()
+        self._brush_thumbnail_refresh_timer.start(100)  # 100ms debounce
+
+    def _do_deferred_thumbnail_refresh(self):
+        """Perform the deferred thumbnail refresh."""
+        if hasattr(self, '_pending_thumbnail_refresh_preset') and self._pending_thumbnail_refresh_preset:
+            self.refresh_buttons_with_same_thumbnail(self._pending_thumbnail_refresh_preset)
+            self._pending_thumbnail_refresh_preset = None
 
     def select_brush_preset(self, preset, source_button=None):
         """Set the selected brush preset as current."""

@@ -238,19 +238,47 @@ class ShortcutHandlerMixin:
         - Handles Esc / focus-out for inline grid name editor.
         - Fallback handler to capture global shortcut when QShortcut is blocked.
         - Handles navigation shortcuts for grid brush selection.
+        
+        PERFORMANCE CRITICAL: This runs for EVERY event in the application.
+        Must return as fast as possible for non-handled events.
         """
+        # Fast path: only process KeyPress and specific focus events
+        event_type = event.type()
+        
+        # Most events are not keyboard - exit immediately
+        if event_type != QEvent.KeyPress and event_type != QEvent.FocusOut:
+            return False
+        
         try:
+            # Handle inline grid name editor events (FocusOut and KeyPress for Escape)
             result = self._handle_grid_name_editor_event(obj, event)
             if result is not None:
                 return result
 
-            if event.type() == QEvent.KeyPress:
-                if self._is_add_brush_key_pressed(event):
+            # Only process KeyPress events from here
+            if event_type == QEvent.KeyPress:
+                # Cache the key for quick comparison
+                key = event.key()
+                
+                # Quick check against our configured shortcut keys
+                add_key = getattr(self, "_add_brush_qt_key", Qt.Key_W)
+                left_key = getattr(self, "_nav_left_qt_key", Qt.Key_Comma)
+                right_key = getattr(self, "_nav_right_qt_key", Qt.Key_Period)
+                
+                # Fast path: if key doesn't match any of our shortcuts, exit immediately
+                if key != add_key and key != left_key and key != right_key:
+                    return False
+                
+                # Skip auto-repeat events
+                if event.isAutoRepeat():
+                    return False
+                
+                if key == add_key:
                     return self._handle_add_brush_key_press(event)
-                elif self._is_nav_left_key_pressed(event):
+                elif key == left_key:
                     return self._handle_nav_left_key_press(event)
-                elif self._is_nav_right_key_pressed(event):
+                elif key == right_key:
                     return self._handle_nav_right_key_press(event)
         except Exception:
             pass
-        return super().eventFilter(obj, event)
+        return False

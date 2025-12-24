@@ -251,6 +251,83 @@ class DraggableBrushButton(QWidget):
             total_height = icon_size
         
         self.setFixedSize(icon_size, total_height)
+    
+    def update_preset(self, new_preset):
+        """Update the button to display a different preset.
+        
+        This is more efficient than creating a new button when reordering
+        or when a preset is updated (e.g., thumbnail change).
+        
+        Args:
+            new_preset: The new brush preset to display
+        """
+        if new_preset is self.preset:
+            # Same object - but we may still need to refresh the thumbnail
+            # if Krita updated the thumbnail in place
+            self.force_refresh_thumbnail(new_preset)
+            return
+        
+        self.preset = new_preset
+        self.setToolTip(new_preset.name())
+        
+        # Update the thumbnail
+        if new_preset.image():
+            pixmap = QPixmap.fromImage(new_preset.image())
+            self.original_pixmap = QPixmap(pixmap)
+            
+            # Apply current state
+            if self._is_hovered:
+                pixmap = self._apply_hover_darkening(pixmap)
+            if self._is_button_selected():
+                pixmap = self._add_highlight_border(pixmap)
+            
+            self.icon_button.setIcon(QIcon(pixmap))
+            self.icon_button.setIconSize(self.icon_button.size())
+        else:
+            self.original_pixmap = None
+            self.icon_button.setText(new_preset.name()[:2])
+        
+        # Update name label
+        if get_display_brush_names() and self.name_label.isVisible():
+            self.name_label.setText(new_preset.name())
+    
+    def force_refresh_thumbnail(self, preset=None):
+        """Force refresh the thumbnail from the preset, unconditionally.
+        
+        Use this when you know the thumbnail has changed and need
+        an immediate visual update, even if the preset object is the same.
+        
+        Args:
+            preset: Optional preset to use. If None, uses current preset.
+        """
+        if preset is not None:
+            self.preset = preset
+        
+        if not self.preset:
+            return
+        
+        self.setToolTip(self.preset.name())
+        
+        if self.preset.image():
+            # Get fresh pixmap from preset image
+            pixmap = QPixmap.fromImage(self.preset.image())
+            self.original_pixmap = QPixmap(pixmap)
+            
+            # Apply current visual state
+            if self._is_hovered:
+                pixmap = self._apply_hover_darkening(pixmap)
+            if self._is_button_selected():
+                pixmap = self._add_highlight_border(pixmap)
+            
+            self.icon_button.setIcon(QIcon(pixmap))
+            self.icon_button.setIconSize(self.icon_button.size())
+        else:
+            self.original_pixmap = None
+            self.icon_button.setText(self.preset.name()[:2])
+        
+        # Update name label if visible
+        if get_display_brush_names() and self.name_label.isVisible():
+            self.name_label.setText(self.preset.name())
 
     def get_required_name_lines(self) -> int:
         """Calculate how many lines this brush name needs.
@@ -560,12 +637,17 @@ class DraggableBrushButton(QWidget):
         """Close context menu when clicking outside.
         
         Includes safety checks to prevent crashes from rapid clicking.
+        PERFORMANCE: Only processes MouseButtonPress events when menu is visible.
         """
+        # Fast path: only care about mouse button press events
+        if event.type() != QEvent.MouseButtonPress:
+            return False
+        
         try:
             # Safety check: ensure context menu exists and is valid
             menu = self._context_menu
             if menu is None:
-                return super().eventFilter(obj, event)
+                return False
             
             # Check if menu widget is still valid (not deleted)
             try:
@@ -573,9 +655,9 @@ class DraggableBrushButton(QWidget):
             except (RuntimeError, AttributeError):
                 # Widget was deleted, clean up reference
                 self._context_menu = None
-                return super().eventFilter(obj, event)
+                return False
             
-            if is_visible and event.type() == QEvent.MouseButtonPress:
+            if is_visible:
                 try:
                     click_pos = QCursor.pos()
                     menu_geometry = menu.geometry()
@@ -589,7 +671,7 @@ class DraggableBrushButton(QWidget):
             # Catch-all for any unexpected errors to prevent crashes
             pass
         
-        return super().eventFilter(obj, event)
+        return False
 
     def _get_buttons_in_grid_order(self):
         """Get all preset buttons in grid layout order."""

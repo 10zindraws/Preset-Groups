@@ -1,6 +1,12 @@
 """Grid update functionality.
 
 Provides mixin class for updating grid contents and layout calculations.
+
+PERFORMANCE OPTIMIZATIONS:
+- Widget reuse instead of delete/recreate
+- Batch UI updates with signal blocking
+- Lazy thumbnail caching
+- Efficient layout recalculation
 """
 
 from ..utils.config_utils import (
@@ -161,13 +167,69 @@ class GridUpdateMixin:
         brush_button.update_highlight(is_selected)
         
         return brush_button
+    
+    def _get_existing_buttons_map(self, layout):
+        """Get a map of preset names to existing buttons in the layout.
+        
+        Returns:
+            dict: Map of preset_name -> button widget
+        """
+        button_map = {}
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            if item:
+                widget = item.widget()
+                if widget and hasattr(widget, 'preset'):
+                    button_map[widget.preset.name()] = widget
+        return button_map
+    
+    def _reuse_or_create_button(self, preset, grid_info, existing_buttons, columns, index, name_label_height, layout):
+        """Reuse an existing button or create a new one.
+        
+        This optimization avoids expensive widget creation when the preset
+        already has a button in the grid.
+        """
+        preset_name = preset.name()
+        row = index // columns
+        col = index % columns
+        
+        # Try to reuse existing button
+        if preset_name in existing_buttons:
+            brush_button = existing_buttons.pop(preset_name)
+            
+            # Update button properties
+            brush_button.grid_index = index + 1
+            brush_button.grid_info = grid_info
+            brush_button.set_name_label_height(name_label_height)
+            
+            # Remove from old position and add to new
+            layout.removeWidget(brush_button)
+            layout.addWidget(brush_button, row, col)
+            
+            # Update highlight state
+            is_selected = self._is_preset_selected(preset)
+            brush_button.update_highlight(is_selected)
+            
+            # Ensure button is in brush_buttons list
+            if brush_button not in self.brush_buttons:
+                self.brush_buttons.append(brush_button)
+            
+            return brush_button
+        
+        # Create new button
+        return self._add_preset_button(preset, grid_info, layout, columns, index, name_label_height)
 
     def update_grid(self, grid_info):
-        """Update grid with current brush presets"""
+        """Update grid with current brush presets.
+        
+        PERFORMANCE: Uses widget reuse to avoid expensive delete/recreate cycles.
+        Only creates new buttons for presets that don't have existing buttons.
+        """
         layout = grid_info["layout"]
         selected_indices = self._store_selected_indices(layout)
-        self._clear_grid_buttons(layout)
-        self._clear_last_selected_if_in_grid(grid_info)
+        
+        # Get existing buttons before clearing
+        existing_buttons = self._get_existing_buttons_map(layout)
         
         columns = self.get_dynamic_columns()
         presets = grid_info["brush_presets"]
@@ -180,11 +242,36 @@ class GridUpdateMixin:
         new_height = self._calculate_grid_height(preset_count, columns, name_label_height)
         grid_info["widget"].setFixedHeight(new_height)
         
-        for index, preset in enumerate(presets):
-            brush_button = self._add_preset_button(
-                preset, grid_info, layout, columns, index, name_label_height
-            )
-            self._restore_button_selection(brush_button, index, selected_indices)
+        # Clear last selected if it was in this grid
+        self._clear_last_selected_if_in_grid(grid_info)
+        
+        # Block signals during batch update for better performance
+        layout_widget = grid_info.get("widget")
+        if layout_widget:
+            layout_widget.setUpdatesEnabled(False)
+        
+        try:
+            # Process presets - reuse buttons where possible
+            for index, preset in enumerate(presets):
+                brush_button = self._reuse_or_create_button(
+                    preset, grid_info, existing_buttons, columns, index, name_label_height, layout
+                )
+                self._restore_button_selection(brush_button, index, selected_indices)
+            
+            # Delete buttons that are no longer needed (preset was removed)
+            for old_button in existing_buttons.values():
+                if old_button in self.brush_buttons:
+                    self.brush_buttons.remove(old_button)
+                if old_button in self.selected_buttons:
+                    self.selected_buttons.remove(old_button)
+                layout.removeWidget(old_button)
+                old_button.hide()
+                old_button.setParent(None)
+                old_button.deleteLater()
+        finally:
+            # Re-enable updates
+            if layout_widget:
+                layout_widget.setUpdatesEnabled(True)
         
         self.update_selection_highlights()
         self.update_grid_visibility(grid_info)

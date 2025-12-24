@@ -71,16 +71,55 @@ def load_common_config() -> dict:
 
 
 def save_common_config(config: dict) -> bool:
-    """Save common configuration to file."""
-    return _write_json(_CONFIG_PATH, config)
+    """Save common configuration to file.
+    
+    Also invalidates the config cache in config_utils.
+    """
+    result = _write_json(_CONFIG_PATH, config)
+    # Invalidate the config cache after saving
+    try:
+        from . import config_utils
+        config_utils._config_cache = None
+    except (ImportError, AttributeError):
+        pass
+    return result
+
+
+# Module-level cache for check_common_config
+_common_config_cache = None
+_common_config_initialized = False
 
 
 def check_common_config() -> dict:
-    """Ensure config file exists and return its contents."""
-    if not os.path.exists(_CONFIG_PATH):
-        _write_json(_CONFIG_PATH, DEFAULT_CONFIG)
-        return DEFAULT_CONFIG.copy()
-    return _read_json(_CONFIG_PATH, DEFAULT_CONFIG.copy())
+    """Ensure config file exists and return its contents.
+    
+    Uses caching to avoid repeated disk reads. The cache is only
+    invalidated when save_common_config is called or reload_config
+    is triggered.
+    """
+    global _common_config_cache, _common_config_initialized
+    
+    # Return cached value if available
+    if _common_config_cache is not None:
+        return _common_config_cache
+    
+    # First time: ensure file exists
+    if not _common_config_initialized:
+        if not os.path.exists(_CONFIG_PATH):
+            _write_json(_CONFIG_PATH, DEFAULT_CONFIG)
+            _common_config_cache = DEFAULT_CONFIG.copy()
+            _common_config_initialized = True
+            return _common_config_cache
+        _common_config_initialized = True
+    
+    _common_config_cache = _read_json(_CONFIG_PATH, DEFAULT_CONFIG.copy())
+    return _common_config_cache
+
+
+def invalidate_common_config_cache():
+    """Invalidate the common config cache, forcing next read from disk."""
+    global _common_config_cache
+    _common_config_cache = None
 
 
 def _create_empty_grid_info(name: str) -> dict:
