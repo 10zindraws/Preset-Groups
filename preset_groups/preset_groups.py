@@ -63,10 +63,10 @@ from .ui.name_button_events import NameButtonEventsMixin
 
 
 # Timer intervals (ms)
-# Note: Intervals tuned for immediate thumbnail detection
-# These are FALLBACK intervals - signals are preferred when available
-_BRUSH_CHECK_INTERVAL = 1000  # Increased since signals handle most cases
-_THUMBNAIL_CHECK_INTERVAL = 2000  # Fast interval for immediate thumbnail detection
+# Note: Intervals tuned for minimal CPU usage - signals are the PRIMARY detection method
+# These are FALLBACK intervals for edge cases where signals don't fire
+_BRUSH_CHECK_INTERVAL = 1000  # Fallback - signals handle most cases
+_THUMBNAIL_CHECK_INTERVAL = 2000  # Relaxed interval - signal-based detection is primary
 _BRUSH_POLL_INTERVAL = 150  # Brush size polling (no signal available for this)
 _RESIZE_DEBOUNCE = 75  # Slightly increased for smoother resize
 _SAVE_DEBOUNCE = 200  # Debounce for save operations
@@ -132,6 +132,7 @@ class PresetGroupsDocker(
         self._add_brush_qt_key = Qt.Key_W
         self.preset_thumbnail_cache = {}
         self._save_pending = False
+        self._save_refresh_pending = False  # Flag to prevent periodic check conflicts during save
         self._grids_pending_update = set()
         
         # Cached references (refreshed on relevant signals)

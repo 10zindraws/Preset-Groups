@@ -1,6 +1,13 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [1.0.7] - 2025-12-24
+
+### Changed
+- Reworked `thumbnail_manager.py` to use less CPU resources, previous version caused stuttering during painting
+- 10 brushes are detected for thumbnail changes every 2 seconds instead of 50 brushes
+- 16 x 16 sample points to detect thumbnail changes instead of 32 x 32
+
 ## [1.0.6] - 2025-12-24
 
 ### Changed
