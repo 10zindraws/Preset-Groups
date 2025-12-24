@@ -15,7 +15,8 @@
     "spacing_between_buttons": 1,
     "spacing_between_grids": 1,
     "brush_icon_size": 95,
-    "display_brush_names": true
+    "display_brush_names": true,
+    "brush_name_font_size": 9
   },
   "shortcut": {
     "add_brush_to_grid": "W",

@@ -181,6 +181,20 @@ class DraggableBrushButton(QWidget):
         if get_display_brush_names() and height > 0:
             self.name_label.setFixedHeight(height)
             self.name_label.setVisible(True)
+            # Update the font size in the stylesheet as well
+            font_size = get_brush_name_font_size()
+            icon_size = get_brush_icon_size()
+            bg_color = _NAME_LABEL_BG_HOVER_COLOR if self._is_hovered else _NAME_LABEL_BG_COLOR
+            self.name_label.setStyleSheet(f"""
+                QLabel {{
+                    background-color: {bg_color};
+                    color: {_NAME_LABEL_TEXT_COLOR};
+                    font-size: {font_size}px;
+                    padding: 2px 1px;
+                    border: none;
+                }}
+            """)
+            self.name_label.setFixedWidth(icon_size)
         else:
             self.name_label.setVisible(False)
         self._update_widget_size()

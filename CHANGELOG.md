@@ -1,6 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [1.0.6] - 2025-12-24
+
+### Changed
+- Made spinbox for Max Brush Size thinner
+
+### Added
+- Option to change font size for displayed brush names
+
 ## [1.0.5] - 2025-12-23
 
 ### Changed

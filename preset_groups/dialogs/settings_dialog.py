@@ -14,6 +14,7 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QPushButton,
     QDoubleSpinBox,
+    QSpinBox,
     QFrame,
     QSpacerItem,
     QSizePolicy,
@@ -208,6 +209,15 @@ class CommonConfigDialog(QDialog):
             "edit-rename"
         ))
         
+        # Adjust Font Size spinbox
+        font_size_value = self.config.get("layout", {}).get("brush_name_font_size", 9)
+        self._original_font_size = font_size_value  # Store for cancel/revert
+        layout.addLayout(self._create_font_size_row(
+            "Adjust Font Size",
+            font_size_value,
+            "draw-text"
+        ))
+        
         layout.addWidget(self._create_separator())
         
         # === SHORTCUTS SECTION ===
@@ -381,7 +391,7 @@ class CommonConfigDialog(QDialog):
         spinbox.setSingleStep(step)
         spinbox.setSuffix(suffix)
         spinbox.setValue(value)
-        spinbox.setFixedWidth(90)
+        spinbox.setFixedWidth(77) # Width of the Max Brush Size Spinbox
         spinbox.setDecimals(0)
         
         hlayout.addWidget(label)
@@ -440,6 +450,81 @@ class CommonConfigDialog(QDialog):
         else:
             toggle.setText("OFF")
             toggle.setStyleSheet(_TOGGLE_OFF_STYLE)
+
+    def _create_font_size_row(self, label_text, value, icon_name=None):
+        """Create a row with label, icon, and spinbox for font size adjustment"""
+        hlayout = QHBoxLayout()
+        hlayout.setSpacing(8)
+        
+        # Icon (optional)
+        if icon_name:
+            icon_label = QLabel()
+            pixmap = None
+            
+            # Try loading custom icon first
+            custom_icon_path = os.path.join(_UI_DIR, f"{icon_name}.png")
+            if os.path.exists(custom_icon_path):
+                custom_pixmap = QPixmap(custom_icon_path)
+                if not custom_pixmap.isNull():
+                    pixmap = custom_pixmap.scaled(14, 14, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            
+            # Fall back to Krita's built-in icons
+            if pixmap is None:
+                icon = Krita.instance().icon(icon_name)
+                if icon and not icon.isNull():
+                    pixmap = icon.pixmap(14, 14)
+            
+            if pixmap:
+                icon_label.setPixmap(pixmap)
+                icon_label.setFixedSize(16, 16)
+                hlayout.addWidget(icon_label)
+        
+        label = QLabel(label_text)
+        label.setStyleSheet(_FIELD_LABEL_STYLE)
+        
+        spinbox = QSpinBox()
+        spinbox.setStyleSheet(_INPUT_STYLE.replace("QDoubleSpinBox", "QSpinBox"))
+        spinbox.setMinimum(6)
+        spinbox.setMaximum(24)
+        spinbox.setSingleStep(1)
+        spinbox.setValue(value)
+        spinbox.setFixedWidth(45)  # Width of the Font Size Spinbox
+        spinbox.setAlignment(Qt.AlignCenter)
+        
+        # Connect to live preview
+        spinbox.valueChanged.connect(self._on_font_size_changed)
+        
+        hlayout.addWidget(label)
+        hlayout.addStretch()
+        hlayout.addWidget(spinbox)
+        
+        # Store reference
+        self.font_size_spinbox = spinbox
+        
+        return hlayout
+
+    def _on_font_size_changed(self, value):
+        """Handle font size spinbox value change for live preview"""
+        from ..utils.config_utils import set_brush_name_font_size_temp
+        set_brush_name_font_size_temp(value)
+        self._refresh_parent_docker_styles()
+
+    def _refresh_parent_docker_styles(self):
+        """Refresh the parent docker's brush name styles for live preview"""
+        parent = self.parent()
+        if parent and hasattr(parent, 'refresh_styles'):
+            parent.refresh_styles()
+        # Also try to find and update the docker if parent is not the docker directly
+        if parent and hasattr(parent, 'grids'):
+            for grid_info in parent.grids:
+                if hasattr(parent, 'update_grid'):
+                    parent.update_grid(grid_info)
+
+    def _revert_font_size_preview(self):
+        """Revert the font size to original value (called on cancel/close)"""
+        from ..utils.config_utils import clear_brush_name_font_size_temp
+        clear_brush_name_font_size_temp()
+        self._refresh_parent_docker_styles()
 
     def _ensure_config_sections(self):
         """Ensure all required config sections exist with defaults"""
@@ -528,6 +613,12 @@ class CommonConfigDialog(QDialog):
         if hasattr(self, 'display_names_btn'):
             self.config["layout"]["display_brush_names"] = self.display_names_btn.isChecked()
         
+        # Save font size and clear temp preview
+        if hasattr(self, 'font_size_spinbox'):
+            self.config["layout"]["brush_name_font_size"] = self.font_size_spinbox.value()
+            from ..utils.config_utils import clear_brush_name_font_size_temp
+            clear_brush_name_font_size_temp()
+        
         # Save exclusive uncollapse toggle
         if hasattr(self, 'exclusive_uncollapse_btn'):
             self.config["layout"]["exclusive_uncollapse"] = self.exclusive_uncollapse_btn.isChecked()
@@ -571,3 +662,13 @@ class CommonConfigDialog(QDialog):
             json.dump(self.config, f, indent=4)
 
         self.accept()
+
+    def reject(self):
+        """Handle cancel button - revert font size preview and close"""
+        self._revert_font_size_preview()
+        super().reject()
+
+    def closeEvent(self, event):
+        """Handle window close (X button) - revert font size preview"""
+        self._revert_font_size_preview()
+        super().closeEvent(event)

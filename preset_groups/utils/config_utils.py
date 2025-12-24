@@ -89,24 +89,52 @@ def get_font_px(font_size_str: str) -> int:
 
 
 # Brush name label sizing constants
-_BRUSH_NAME_MIN_FONT_SIZE = 7
-_BRUSH_NAME_MAX_FONT_SIZE = 12
-_BRUSH_NAME_BASE_FONT_SIZE = 9
-_BRUSH_NAME_REFERENCE_ICON_SIZE = 65  # Reference icon size for scaling
+_BRUSH_NAME_MIN_FONT_SIZE = 6
+_BRUSH_NAME_MAX_FONT_SIZE = 24
+_BRUSH_NAME_DEFAULT_FONT_SIZE = 9
+
+# Temporary font size override for live preview (None = use config)
+_temp_brush_name_font_size = None
+
+
+def get_brush_name_font_size_config() -> int:
+    """Get the configured brush name font size from config.
+    
+    Returns:
+        Font size in pixels from config, or default if not set.
+    """
+    return _get_layout_value("brush_name_font_size", _BRUSH_NAME_DEFAULT_FONT_SIZE)
+
+
+def set_brush_name_font_size_temp(size: int) -> None:
+    """Set a temporary font size override for live preview.
+    
+    Args:
+        size: Font size in pixels, or None to clear the override.
+    """
+    global _temp_brush_name_font_size
+    _temp_brush_name_font_size = size
+
+
+def clear_brush_name_font_size_temp() -> None:
+    """Clear the temporary font size override."""
+    global _temp_brush_name_font_size
+    _temp_brush_name_font_size = None
 
 
 def get_brush_name_font_size() -> int:
-    """Calculate font size for brush names based on icon size.
+    """Get font size for brush names.
     
-    Scales proportionally with brush_icon_size slider, clamped between
-    min and max thresholds for readability.
+    Returns the temporary preview size if set, otherwise the configured value.
+    The value is clamped between min and max thresholds.
     """
-    icon_size = get_brush_icon_size()
-    # Scale proportionally from reference size
-    scale_factor = icon_size / _BRUSH_NAME_REFERENCE_ICON_SIZE
-    calculated_size = int(_BRUSH_NAME_BASE_FONT_SIZE * scale_factor)
+    global _temp_brush_name_font_size
+    if _temp_brush_name_font_size is not None:
+        size = _temp_brush_name_font_size
+    else:
+        size = get_brush_name_font_size_config()
     # Clamp between min and max
-    return max(_BRUSH_NAME_MIN_FONT_SIZE, min(_BRUSH_NAME_MAX_FONT_SIZE, calculated_size))
+    return max(_BRUSH_NAME_MIN_FONT_SIZE, min(_BRUSH_NAME_MAX_FONT_SIZE, size))
 
 
 def get_brush_name_label_height(lines: int = 1) -> int:
