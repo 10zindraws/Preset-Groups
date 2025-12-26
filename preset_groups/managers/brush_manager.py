@@ -411,7 +411,7 @@ class BrushManagerMixin:
     def _do_deferred_thumbnail_refresh(self):
         """Perform the deferred thumbnail refresh."""
         if hasattr(self, '_pending_thumbnail_refresh_preset') and self._pending_thumbnail_refresh_preset:
-            self.refresh_buttons_with_same_thumbnail(self._pending_thumbnail_refresh_preset)
+            self.refresh_buttons_for_preset_by_reference(self._pending_thumbnail_refresh_preset)
             self._pending_thumbnail_refresh_preset = None
 
     def select_brush_preset(self, preset, source_button=None):

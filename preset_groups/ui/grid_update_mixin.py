@@ -5,7 +5,6 @@ Provides mixin class for updating grid contents and layout calculations.
 PERFORMANCE OPTIMIZATIONS:
 - Widget reuse instead of delete/recreate
 - Batch UI updates with signal blocking
-- Lazy thumbnail caching
 - Efficient layout recalculation
 """
 
@@ -131,13 +130,6 @@ class GridUpdateMixin:
             return False
         return preset.name() == self.current_selected_preset.name()
 
-    def _cache_preset_thumbnail(self, preset):
-        """Cache thumbnail hash for preset"""
-        preset_name = preset.name()
-        thumbnail_hash = self.get_preset_thumbnail_hash(preset)
-        if thumbnail_hash is not None:
-            self.preset_thumbnail_cache[preset_name] = thumbnail_hash
-
     def _restore_button_selection(self, brush_button, index, selected_indices):
         """Restore selection state for button if it was previously selected"""
         if index not in selected_indices:
@@ -162,7 +154,6 @@ class GridUpdateMixin:
         self.brush_buttons.append(brush_button)
         layout.addWidget(brush_button, row, col)
         
-        self._cache_preset_thumbnail(preset)
         is_selected = self._is_preset_selected(preset)
         brush_button.update_highlight(is_selected)
         

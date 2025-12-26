@@ -6,7 +6,7 @@ The docker inherits from multiple mixins to organize functionality:
 - BrushManagerMixin: Brush size control and preset selection
 - GridManagerMixin: Grid CRUD and reordering operations  
 - SelectionManagerMixin: Button and grid selection handling
-- ThumbnailManagerMixin: Thumbnail caching and change detection
+- ThumbnailManagerMixin: Thumbnail refresh on events
 - ShortcutHandlerMixin: Keyboard shortcut handling
 - DragManagerMixin: Drag & drop and auto-scroll
 - IconButtonFactoryMixin: Icon button creation
@@ -15,10 +15,11 @@ The docker inherits from multiple mixins to organize functionality:
 
 PERFORMANCE OPTIMIZATIONS:
 - Signal-based brush change detection (replaces polling when possible)
+- Event-driven thumbnail updates: Brush Editor close, preset save
+- Startup refresh of all thumbnails
 - Cached active view/window references
 - Widget reuse instead of recreation
 - Batch UI updates with signal blocking
-- Deferred thumbnail loading until docker is visible
 - Visibility-aware timer pausing
 """
 
@@ -47,6 +48,7 @@ from .utils.config_utils import (
     get_brush_icon_size,
     reload_config,
     get_spacing_between_buttons,
+    get_exclusive_uncollapse,
 )
 from .utils.styles import docker_btn_style
 from .dialogs.settings_dialog import CommonConfigDialog
@@ -66,11 +68,9 @@ from .ui.name_button_events import NameButtonEventsMixin
 # Note: Intervals tuned for minimal CPU usage - signals are the PRIMARY detection method
 # These are FALLBACK intervals for edge cases where signals don't fire
 _BRUSH_CHECK_INTERVAL = 1000  # Fallback - signals handle most cases
-_THUMBNAIL_CHECK_INTERVAL = 2000  # Relaxed interval - signal-based detection is primary
 _BRUSH_POLL_INTERVAL = 150  # Brush size polling (no signal available for this)
 _RESIZE_DEBOUNCE = 75  # Slightly increased for smoother resize
 _SAVE_DEBOUNCE = 200  # Debounce for save operations
-_THUMBNAIL_CACHE_CHUNK_SIZE = 5  # Larger chunks for faster initial caching
 _DEFERRED_INIT_DELAY = 100  # Delay before starting deferred initialization
 _VISIBILITY_SETTLE_DELAY = 50  # Delay after becoming visible before processing
 
@@ -111,6 +111,7 @@ class PresetGroupsDocker(
         self._load_data()
         self._setup_krita_signals()  # Connect to Krita signals first
         self._setup_timers()  # Fallback timers (start paused)
+        self._init_brush_editor_monitor()  # Monitor Brush Editor Docker state
         self.setup_brush_preset_save_monitor()
         self.max_brush_size = self.get_max_brush_size_from_config()
         self.init_ui()
@@ -130,9 +131,7 @@ class PresetGroupsDocker(
         self.selected_grids = []
         self.last_selected_grid = None
         self._add_brush_qt_key = Qt.Key_W
-        self.preset_thumbnail_cache = {}
         self._save_pending = False
-        self._save_refresh_pending = False  # Flag to prevent periodic check conflicts during save
         self._grids_pending_update = set()
         
         # Cached references (refreshed on relevant signals)
@@ -258,16 +257,13 @@ class PresetGroupsDocker(
     def _on_resource_changed(self, resource_type, resource_name):
         """Handle resource changes from Krita.
         
-        Invalidates caches and triggers aggressive refresh for preset changes.
+        Invalidates caches and refreshes the changed preset.
         """
         if resource_type == "preset" or resource_type == "brushpreset":
             self._invalidate_preset_cache()
-            # Schedule aggressive thumbnail refresh for this preset
+            # Refresh the preset thumbnail if docker is visible
             if resource_name and self._is_docker_visible():
-                # Get original hash for comparison
-                original_hash = self.preset_thumbnail_cache.get(resource_name)
-                # Use aggressive retry mechanism for immediate detection
-                self._schedule_aggressive_refresh(resource_name, original_hash, 0)
+                self._refresh_preset_by_name(resource_name)
     
     def _update_cached_view(self):
         """Update cached view reference."""
@@ -283,20 +279,18 @@ class PresetGroupsDocker(
             self._cached_view = None
 
     def _setup_timers(self):
-        """Setup periodic timers for brush and thumbnail monitoring.
+        """Setup periodic timers for brush monitoring.
         
         Timers start paused and are resumed when docker becomes visible.
         This saves CPU when the docker is hidden.
+        
+        NOTE: Thumbnail change detection is now event-driven (Brush Editor close)
+        rather than interval-based, so no thumbnail_check_timer is needed.
         """
         # Brush change timer (fallback when signals unavailable)
         self.brush_check_timer = QTimer()
         self.brush_check_timer.timeout.connect(self._safe_check_brush_change)
         # Don't start yet - will start when docker becomes visible
-        
-        # Thumbnail change timer (fallback detection)
-        self.thumbnail_check_timer = QTimer()
-        self.thumbnail_check_timer.timeout.connect(self._safe_check_thumbnail_changes)
-        # Don't start yet
         
         self._timers_paused = True  # Track timer state
     
@@ -310,9 +304,6 @@ class PresetGroupsDocker(
         if hasattr(self, 'brush_check_timer') and not self.brush_check_timer.isActive():
             self.brush_check_timer.start(_BRUSH_CHECK_INTERVAL)
         
-        if hasattr(self, 'thumbnail_check_timer') and not self.thumbnail_check_timer.isActive():
-            self.thumbnail_check_timer.start(_THUMBNAIL_CHECK_INTERVAL)
-        
         if hasattr(self, 'brush_size_poll_timer') and not self.brush_size_poll_timer.isActive():
             self.brush_size_poll_timer.start(_BRUSH_POLL_INTERVAL)
     
@@ -325,9 +316,6 @@ class PresetGroupsDocker(
         
         if hasattr(self, 'brush_check_timer'):
             self.brush_check_timer.stop()
-        
-        if hasattr(self, 'thumbnail_check_timer'):
-            self.thumbnail_check_timer.stop()
         
         if hasattr(self, 'brush_size_poll_timer'):
             self.brush_size_poll_timer.stop()
@@ -393,11 +381,6 @@ class PresetGroupsDocker(
         if self._is_docker_visible():
             self.check_brush_change()
 
-    def _safe_check_thumbnail_changes(self):
-        """Wrapper for check_thumbnail_changes with visibility guard."""
-        if self._is_docker_visible():
-            self.check_thumbnail_changes()
-
     def save_grids_data(self):
         """Schedule grids data save with debouncing to avoid excessive file writes."""
         if self._save_pending:
@@ -450,46 +433,18 @@ class PresetGroupsDocker(
         """Complete deferred initialization tasks.
         
         Called when docker first becomes visible after startup.
+        Refreshes all thumbnails to ensure they are up-to-date.
         """
         if self._initialization_complete:
             return
         
         self._initialization_complete = True
         
-        # Start thumbnail caching in background
-        self._start_deferred_thumbnail_caching()
-        
         # Start timers now that we're visible
         self._start_timers()
-
-    def _start_deferred_thumbnail_caching(self):
-        """Start deferred thumbnail caching in chunks to avoid blocking UI."""
-        self._thumbnail_cache_queue = []
-        for grid_info in self.grids:
-            for preset in grid_info.get("brush_presets", []):
-                if preset.name() not in self.preset_thumbnail_cache:
-                    self._thumbnail_cache_queue.append(preset)
         
-        if self._thumbnail_cache_queue:
-            self._process_thumbnail_cache_chunk()
-
-    def _process_thumbnail_cache_chunk(self):
-        """Process a chunk of thumbnails then schedule next chunk."""
-        if not hasattr(self, '_thumbnail_cache_queue') or not self._thumbnail_cache_queue:
-            return
-        
-        # Process a small chunk
-        chunk = self._thumbnail_cache_queue[:_THUMBNAIL_CACHE_CHUNK_SIZE]
-        self._thumbnail_cache_queue = self._thumbnail_cache_queue[_THUMBNAIL_CACHE_CHUNK_SIZE:]
-        
-        for preset in chunk:
-            thumbnail_hash = self.get_preset_thumbnail_hash(preset)
-            if thumbnail_hash is not None:
-                self.preset_thumbnail_cache[preset.name()] = thumbnail_hash
-        
-        # Schedule next chunk if more remain
-        if self._thumbnail_cache_queue:
-            QTimer.singleShot(50, self._process_thumbnail_cache_chunk)
+        # Perform startup thumbnail refresh for all presets
+        self._perform_startup_thumbnail_refresh()
 
     def _create_top_row(self, main_layout):
         """Create top controls row with brush size slider and settings."""
@@ -603,15 +558,58 @@ class PresetGroupsDocker(
 
     def show_settings_dialog(self):
         """Show settings dialog and apply changes."""
+        # Capture old exclusive_uncollapse value before dialog opens
+        old_exclusive_uncollapse = get_exclusive_uncollapse()
+        
         dlg = CommonConfigDialog(self.common_config_path, self)
         if not dlg.exec_():
             return
         reload_config()
+        
+        # Check if exclusive_uncollapse transitioned from OFF to ON
+        new_exclusive_uncollapse = get_exclusive_uncollapse()
+        if not old_exclusive_uncollapse and new_exclusive_uncollapse:
+            self._apply_exclusive_uncollapse_transition()
+        
         new_max = self.get_max_brush_size_from_config()
         self.update_max_brush_size(new_max)
         self.setup_add_brush_shortcut()
         self._apply_grid_spacing()
         self.refresh_styles()
+
+    def _apply_exclusive_uncollapse_transition(self):
+        """Collapse all grids when exclusive uncollapse is turned on.
+        
+        Exception: If exactly one grid is the active_grid (singular selection),
+        that grid remains uncollapsed. If multiple grids are selected or no
+        grid is active, all grids are collapsed.
+        """
+        # Determine if we have a singular active grid (not multiple selection)
+        has_singular_active = (
+            self.active_grid is not None and
+            len(self.selected_grids) <= 1
+        )
+        
+        # The grid to keep uncollapsed (if any)
+        grid_to_keep_uncollapsed = self.active_grid if has_singular_active else None
+        
+        # Collapse all grids except the singular active one
+        for grid_info in self.grids:
+            if grid_info == grid_to_keep_uncollapsed:
+                # Keep this grid uncollapsed
+                if grid_info.get("is_collapsed", False):
+                    grid_info["is_collapsed"] = False
+                    self._update_collapse_button_icon(grid_info)
+                    self.update_grid_visibility(grid_info)
+            else:
+                # Collapse this grid
+                if not grid_info.get("is_collapsed", False):
+                    grid_info["is_collapsed"] = True
+                    self._update_collapse_button_icon(grid_info)
+                    self.update_grid_visibility(grid_info)
+        
+        # Save the new collapse states
+        self.save_grids_data()
 
     def _apply_grid_spacing(self):
         """Update grid spacing after settings change."""

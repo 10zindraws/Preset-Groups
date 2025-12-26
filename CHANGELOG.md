@@ -1,6 +1,17 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [1.0.8] - 2025-12-26
+
+### Changed
+- Simplified brush thumbnail refreshing by making a brush's thumbnail update when Brush Editor is closed
+- When Exclusive Uncollapse is turned on, automatically collapse groups
+
+### Removed
+- Brush thumbnails hashing
+- Continuous 2 second interval thumbnail comparison
+- Brush thumbnails caching
+
 ## [1.0.7] - 2025-12-24
 
 ### Changed
@@ -49,4 +60,4 @@ All notable changes to this project will be documented in this file.
 - This CHANGELOG file
 
 ### Changed
-- When only group exists, automatically set/kept it as the active group so it can't be deselected.
+- When only group exists, automatically set/kept it as the active group so it can't be deselected

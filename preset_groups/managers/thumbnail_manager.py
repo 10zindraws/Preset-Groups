@@ -1,95 +1,208 @@
 """Thumbnail management functionality.
 
-Provides mixin class for caching and monitoring brush preset thumbnails,
-detecting changes, and refreshing UI when thumbnails are updated.
+Provides mixin class for monitoring brush preset thumbnails and refreshing 
+UI when thumbnails are updated.
 
-PERFORMANCE-OPTIMIZED CHANGE DETECTION:
-- Lightweight hash sampling for efficient change detection
-- Signal-driven refresh on preset save (primary detection)
-- Lazy cache validation (avoids constant API calls)
-- Minimal retry attempts for edge cases
-- Batched update propagation
+SIMPLIFIED DESIGN:
+- Event-driven detection: monitors Brush Editor dialog open/close state
+- Brush Editor close: refreshes only the currently selected preset thumbnail
+- Startup: refreshes ALL thumbnails unconditionally
+- Signal-driven refresh on preset save
+- No hash comparison needed - always refresh directly
 """
 
 from krita import Krita  # type: ignore
-from PyQt5.QtCore import QTimer, QByteArray, QBuffer, QIODevice
-import hashlib
+from PyQt5.QtCore import QTimer
+from PyQt5.QtWidgets import QDialog, QWidget
 
-# Constants for efficient thumbnail change detection
-# Use moderate sampling - balances accuracy with performance
-_HASH_GRID_SIZE = 16  # 16x16 grid = 256 sample points (4x faster than 32x32)
-_MAX_PRESETS_PER_CYCLE = 10  # Check fewer presets per cycle to reduce CPU spikes
-
-# Retry configuration for preset save detection (reduced from 6 to 3 retries)
-_SAVE_RETRY_DELAYS = [100, 400, 1000]  # ms delays for retries (fewer, smarter delays)
-_FORCED_REFRESH_DELAY = 150  # ms delay for forced refresh after change
+# Brush Editor detection patterns - comprehensive list for Krita 4.x and 5.x
+# Searches class names, object names, and window titles
+_BRUSH_EDITOR_PATTERNS = [
+    # Exact matches from Krita 5.x (discovered via debug)
+    "kispopupbuttonframe",          # Object name of Brush Editor popup
+    "brush editor",                 # Window title (exact match)
+    # Class name patterns (Krita internal)
+    "kispaintoppreseteditor",       # KisPaintOpPresetEditor
+    "kispaintoppresetseditor",      # KisPaintOpPresetsEditor  
+    "kispreseteditor",              # KisPresetEditor
+    "kispaintopsettings",           # KisPaintOpSettings dialogs
+    "kispaintoppreset",             # Any preset-related dialog
+    "kispaintoppopup",              # Preset popup
+    "paintop",                      # Generic paintop pattern
+    # Object name / title patterns
+    "brusheditor",
+    "preset editor",
+    "edit brush",
+    "brush settings",
+    "scratchpad",                   # Scratchpad is part of brush editor
+]
+_BRUSH_EDITOR_CHECK_INTERVAL = 300  # ms - check brush editor state
+_REFRESH_DELAY = 200  # ms - delay after brush editor close before refresh
 
 
 class ThumbnailManagerMixin:
     """Mixin class providing thumbnail management functionality for the docker widget."""
     
-    def _compute_full_image_hash(self, image):
-        """Compute an efficient hash of the image using sparse sampling.
+    def _init_brush_editor_monitor(self):
+        """Initialize the Brush Editor visibility monitor.
         
-        Uses an 8x8 grid (64 samples) which is sufficient to detect
-        brush thumbnail changes while being ~16x faster than dense sampling.
+        Uses a presence-based detection approach: counts potential brush editor
+        widgets each cycle. When count drops from >0 to 0, editor was closed.
         """
-        if image.isNull():
-            return None
-        
-        width = image.width()
-        height = image.height()
-        
-        if width <= 0 or height <= 0:
-            return None
-        
-        # Use MD5 for fast, reliable hashing of pixel data
-        hasher = hashlib.md5()
-        
-        # Add image dimensions as a quick differentiator
-        hasher.update(f"{width}x{height}".encode())
-        
-        # Sparse grid sampling - 8x8 = 64 sample points
-        # Sufficient for detecting brush thumbnail changes
-        step_x = max(1, width // _HASH_GRID_SIZE)
-        step_y = max(1, height // _HASH_GRID_SIZE)
-        
-        for y in range(0, height, step_y):
-            for x in range(0, width, step_x):
-                pixel = image.pixel(x, y)
-                # Pack all 4 channels (ARGB) into the hash
-                hasher.update(pixel.to_bytes(4, 'big'))
-        
-        return hasher.hexdigest()
+        self._brush_editor_widget_count = 0
+        self._brush_editor_check_timer = QTimer()
+        self._brush_editor_check_timer.timeout.connect(self._check_brush_editor_state)
+        self._brush_editor_check_timer.start(_BRUSH_EDITOR_CHECK_INTERVAL)
     
-    def _get_raw_image_bytes(self, image):
-        """Get raw image bytes for exact comparison when needed."""
-        try:
-            buffer = QByteArray()
-            qbuffer = QBuffer(buffer)
-            qbuffer.open(QIODevice.WriteOnly)
-            image.save(qbuffer, "PNG")
-            qbuffer.close()
-            return buffer.data()
-        except Exception:
-            return None
-
-    def get_preset_thumbnail_hash(self, preset):
-        """Generate a high-fidelity hash of the preset thumbnail for change detection.
+    def _count_brush_editor_widgets(self):
+        """Count the number of visible brush editor related widgets.
         
-        Uses dense pixel sampling to detect even subtle changes in brush thumbnails.
+        Returns the count of widgets that appear to be brush editor dialogs.
+        Uses a comprehensive search across top-level widgets.
         """
-        if not preset or not preset.image():
-            return None
+        count = 0
+        try:
+            from PyQt5.QtWidgets import QApplication
+            
+            # Check all top-level widgets (dialogs, popups, windows)
+            for widget in QApplication.topLevelWidgets():
+                if widget.isVisible() and self._is_brush_editor_widget(widget):
+                    count += 1
+            
+        except Exception:
+            pass
         
-        image = preset.image()
-        if image.isNull():
-            return None
+        return count
+    
+    def _is_brush_editor_widget(self, widget):
+        """Check if a widget is the Brush Editor based on class name and title.
+        
+        Uses comprehensive pattern matching against known Krita class names.
+        """
+        if not widget or not widget.isVisible():
+            return False
         
         try:
-            return self._compute_full_image_hash(image)
+            # Get identifiers to check (all lowercase for matching)
+            class_name = widget.__class__.__name__.lower()
+            obj_name = (widget.objectName() or "").lower()
+            window_title = ""
+            if hasattr(widget, 'windowTitle'):
+                window_title = (widget.windowTitle() or "").lower()
+            
+            # Build combined string for easier matching
+            combined = f"{class_name} {obj_name} {window_title}"
+            
+            # Check against known patterns
+            for pattern in _BRUSH_EDITOR_PATTERNS:
+                if pattern in combined:
+                    return True
+            
+            # Additional heuristic: check if it's a dialog with brush-related content
+            # by examining the widget's children for known brush editor components
+            if isinstance(widget, QDialog) or widget.isWindow():
+                for child in widget.findChildren(QWidget):
+                    child_class = child.__class__.__name__.lower()
+                    if any(p in child_class for p in ["paintop", "scratchpad", "preseteditor", "brushpreview"]):
+                        return True
+            
+            return False
         except Exception:
-            return None
+            return False
+    
+    def _check_brush_editor_state(self):
+        """Periodically check Brush Editor presence.
+        
+        Uses widget counting approach: when count transitions from >0 to 0,
+        the brush editor was closed and we refresh the current preset thumbnail.
+        """
+        current_count = self._count_brush_editor_widgets()
+        
+        # Detect transition: had editor widgets -> now have none (closed)
+        if self._brush_editor_widget_count > 0 and current_count == 0:
+            # Brush Editor was just closed - refresh current preset thumbnail
+            self._on_brush_editor_closed()
+        
+        self._brush_editor_widget_count = current_count
+    
+    def _on_brush_editor_closed(self):
+        """Called when Brush Editor is closed.
+        
+        Refreshes only the currently selected preset's thumbnail since
+        that's the one most likely to have been edited.
+        """
+        # Small delay to allow Krita to finalize any changes
+        QTimer.singleShot(_REFRESH_DELAY, self._refresh_current_preset_thumbnail)
+    
+    def _refresh_current_preset_thumbnail(self):
+        """Refresh only the currently selected preset's thumbnail.
+        
+        This is efficient since typically only the active preset is modified
+        when using the Brush Editor.
+        """
+        if not self.grids:
+            return
+        
+        # Get the currently selected preset from Krita
+        current_preset = self._get_current_preset()
+        if not current_preset:
+            return
+        
+        preset_name = current_preset.name()
+        
+        # Check if this preset exists in any of our grids
+        preset_in_grids = any(
+            preset.name() == preset_name
+            for grid_info in self.grids
+            for preset in grid_info.get("brush_presets", [])
+        )
+        
+        if not preset_in_grids:
+            return
+        
+        # Refresh the preset directly (no hash comparison needed)
+        fresh_preset = self._get_fresh_preset(preset_name)
+        if fresh_preset:
+            self._update_all_buttons_for_preset(preset_name, fresh_preset)
+            self.save_grids_data()
+    
+    def _perform_startup_thumbnail_refresh(self):
+        """Refresh all thumbnails on Krita startup.
+        
+        Unconditionally refreshes ALL preset thumbnails to ensure
+        they are up-to-date with any external changes.
+        """
+        # Delay slightly to ensure Krita resources are fully loaded
+        QTimer.singleShot(1000, self._refresh_all_thumbnails)
+    
+    def _refresh_all_thumbnails(self):
+        """Refresh thumbnails for all presets in all grids."""
+        if not self.grids:
+            return
+        
+        # Collect ALL unique preset names across all grids
+        seen_names = set()
+        presets_to_refresh = []
+        for grid_info in self.grids:
+            for preset in grid_info.get("brush_presets", []):
+                name = preset.name()
+                if name not in seen_names:
+                    seen_names.add(name)
+                    presets_to_refresh.append(name)
+        
+        if not presets_to_refresh:
+            return
+        
+        # Refresh ALL presets unconditionally
+        any_updated = False
+        for preset_name in presets_to_refresh:
+            fresh_preset = self._get_fresh_preset(preset_name)
+            if fresh_preset:
+                self._update_all_buttons_for_preset(preset_name, fresh_preset)
+                any_updated = True
+        
+        if any_updated:
+            self.save_grids_data()
     
     def _get_fresh_preset(self, preset_name):
         """Force-fetch a fresh preset from Krita's resource system.
@@ -103,14 +216,6 @@ class ThumbnailManagerMixin:
         # Direct fetch from Krita API
         fresh_dict = Krita.instance().resources("preset")
         return fresh_dict.get(preset_name)
-
-    def cache_all_preset_thumbnails(self):
-        """Cache thumbnail hashes for all presets in all grids."""
-        for grid_info in self.grids:
-            for preset in grid_info.get("brush_presets", []):
-                thumbnail_hash = self.get_preset_thumbnail_hash(preset)
-                if thumbnail_hash is not None:
-                    self.preset_thumbnail_cache[preset.name()] = thumbnail_hash
 
     def _try_connect_save_action(self, app):
         """Try to connect to a brush preset save action."""
@@ -185,80 +290,23 @@ class ThumbnailManagerMixin:
         return app.activeWindow().activeView().currentBrushPreset()
 
     def on_brush_preset_saved(self):
-        """Handle brush preset save event with smart retry mechanism.
+        """Handle brush preset save event.
         
-        Uses a limited number of retry attempts to catch thumbnail updates.
-        Sets a flag to prevent periodic check conflicts during save processing.
+        Refreshes the currently selected preset's thumbnail after a short delay
+        to allow Krita to finalize the save.
         """
         current_preset = self._get_current_preset()
         if current_preset:
             preset_name = current_preset.name()
-            # Store original hash for comparison
-            original_hash = self.preset_thumbnail_cache.get(preset_name)
-            # Set flag to prevent periodic checks from interfering
-            self._save_refresh_pending = True
-            self._schedule_aggressive_refresh(preset_name, original_hash, 0)
+            # Delay to allow Krita to complete the save operation
+            QTimer.singleShot(_REFRESH_DELAY, lambda: self._refresh_preset_by_name(preset_name))
     
-    def _schedule_aggressive_refresh(self, preset_name, original_hash, retry_index):
-        """Schedule smart refresh attempts with escalating delays.
-        
-        Args:
-            preset_name: Name of the preset to check
-            original_hash: The hash before the save action
-            retry_index: Current retry attempt index
-        """
-        if retry_index >= len(_SAVE_RETRY_DELAYS):
-            # All retries exhausted - do one final forced refresh and clear flag
-            QTimer.singleShot(_FORCED_REFRESH_DELAY, lambda: self._finalize_refresh(preset_name))
-            return
-        
-        delay = _SAVE_RETRY_DELAYS[retry_index]
-        QTimer.singleShot(
-            delay,
-            lambda: self._check_and_maybe_retry(
-                preset_name, original_hash, retry_index
-            )
-        )
-    
-    def _check_and_maybe_retry(self, preset_name, original_hash, retry_index):
-        """Check if thumbnail changed, retry if not."""
-        # Force fresh fetch from Krita
-        fresh_preset = self._get_fresh_preset(preset_name)
-        if not fresh_preset:
-            self._save_refresh_pending = False
-            return
-        
-        new_hash = self.get_preset_thumbnail_hash(fresh_preset)
-        
-        # Check if the hash actually changed
-        if new_hash is not None and new_hash != original_hash:
-            # Thumbnail changed! Update everything and clear flag
-            self.preset_thumbnail_cache[preset_name] = new_hash
-            self._update_all_buttons_for_preset(preset_name, fresh_preset)
-            self._save_refresh_pending = False
-        else:
-            # Hash unchanged, schedule another retry
-            self._schedule_aggressive_refresh(
-                preset_name, original_hash, retry_index + 1
-            )
-    
-    def _finalize_refresh(self, preset_name):
-        """Final refresh attempt and cleanup after all retries exhausted."""
-        self._force_refresh_preset(preset_name)
-        self._save_refresh_pending = False
-    
-    def _force_refresh_preset(self, preset_name):
-        """Force refresh a preset's thumbnail even if hash check fails.
-        
-        Used as a fallback when retry mechanism doesn't detect a change
-        but user expects the thumbnail to update.
-        """
+    def _refresh_preset_by_name(self, preset_name):
+        """Refresh a specific preset's thumbnail by name."""
         fresh_preset = self._get_fresh_preset(preset_name)
         if fresh_preset:
-            new_hash = self.get_preset_thumbnail_hash(fresh_preset)
-            if new_hash is not None:
-                self.preset_thumbnail_cache[preset_name] = new_hash
             self._update_all_buttons_for_preset(preset_name, fresh_preset)
+            self.save_grids_data()
     
     def _update_all_buttons_for_preset(self, preset_name, preset):
         """Update all buttons displaying this preset with the new thumbnail."""
@@ -280,105 +328,7 @@ class ThumbnailManagerMixin:
                             button.update_preset(preset)
                         buttons_updated = True
         
-        if buttons_updated:
-            self.save_grids_data()
-
-    def _has_thumbnail_changed(self, preset_name, force_fresh=False):
-        """Check if a preset's thumbnail has changed from cached version.
-        
-        Args:
-            preset_name: Name of the preset to check
-            force_fresh: If True, bypass cache and fetch fresh from Krita API
-        
-        Returns:
-            Tuple of (has_changed: bool, new_hash: str or None)
-        """
-        # If not in cache, we haven't seen it yet - cache it now
-        old_hash = self.preset_thumbnail_cache.get(preset_name)
-        
-        # Get the preset - force fresh fetch if requested
-        if force_fresh:
-            current_preset = self._get_fresh_preset(preset_name)
-        else:
-            if hasattr(self, '_get_preset_dict'):
-                preset_dict = self._get_preset_dict()
-            else:
-                preset_dict = Krita.instance().resources("preset")
-            current_preset = preset_dict.get(preset_name)
-        
-        if not current_preset:
-            return False, None
-        
-        new_hash = self.get_preset_thumbnail_hash(current_preset)
-        
-        # If no old hash, cache it and report no change
-        if old_hash is None:
-            if new_hash is not None:
-                self.preset_thumbnail_cache[preset_name] = new_hash
-            return False, new_hash
-        
-        return (new_hash is not None and new_hash != old_hash), new_hash
-
-    def check_and_refresh_preset(self, preset_name):
-        """Check if preset thumbnail changed and refresh if needed."""
-        changed, new_hash = self._has_thumbnail_changed(preset_name)
-        if changed:
-            # Update cache immediately
-            if new_hash is not None:
-                self.preset_thumbnail_cache[preset_name] = new_hash
-            self.refresh_buttons_for_preset(preset_name)
-
-    def check_thumbnail_changes(self):
-        """Periodically check for thumbnail changes.
-        
-        Uses force_fresh to get actual thumbnail data from Krita API.
-        Performance is managed by:
-        - Checking only a limited batch of presets per cycle
-        - Using efficient 8x8 grid hash (64 samples vs 1024)
-        - Running at a relaxed 5-second interval
-        """
-        # Skip if no grids
-        if not self.grids:
-            return
-        
-        # Skip if there are pending saves being processed (avoid conflicts)
-        if hasattr(self, '_save_refresh_pending') and self._save_refresh_pending:
-            return
-        
-        # Collect unique preset names across all grids
-        presets_to_check = []
-        seen_names = set()
-        for grid_info in self.grids:
-            for preset in grid_info.get("brush_presets", []):
-                name = preset.name()
-                if name not in seen_names:
-                    seen_names.add(name)
-                    presets_to_check.append(name)
-        
-        if not presets_to_check:
-            return
-        
-        # Rotate through presets to spread CPU load across cycles
-        if len(presets_to_check) > _MAX_PRESETS_PER_CYCLE:
-            if not hasattr(self, '_thumbnail_check_offset'):
-                self._thumbnail_check_offset = 0
-            
-            start = self._thumbnail_check_offset
-            presets_to_check = presets_to_check[start:start + _MAX_PRESETS_PER_CYCLE]
-            self._thumbnail_check_offset = (start + _MAX_PRESETS_PER_CYCLE) % len(seen_names)
-        
-        # Check each preset with force_fresh to get actual Krita data
-        # Performance is managed via batch size and efficient hash algorithm
-        for preset_name in presets_to_check:
-            changed, new_hash = self._has_thumbnail_changed(preset_name, force_fresh=True)
-            if changed:
-                # Update cache immediately to prevent duplicate refresh
-                if new_hash is not None:
-                    self.preset_thumbnail_cache[preset_name] = new_hash
-                # Use fresh preset for the update
-                fresh_preset = self._get_fresh_preset(preset_name)
-                if fresh_preset:
-                    self._update_all_buttons_for_preset(preset_name, fresh_preset)
+        return buttons_updated
 
     def get_button_positions(self, preset_name):
         """Get positions of all buttons with the given preset name."""
@@ -416,7 +366,7 @@ class ThumbnailManagerMixin:
         if not button_positions:
             return
         
-        # Get updated preset from cache
+        # Get updated preset
         if hasattr(self, '_get_preset_dict'):
             preset_dict = self._get_preset_dict()
         else:
@@ -449,49 +399,23 @@ class ThumbnailManagerMixin:
                 self.update_grid(grid_info)
                 grids_needing_full_update.discard(id(grid_info))  # Don't rebuild twice
         
-        # Update cache
-        new_hash = self.get_preset_thumbnail_hash(updated_preset)
-        if new_hash is not None:
-            self.preset_thumbnail_cache[preset_name] = new_hash
-        
         self.save_grids_data()
 
-    def refresh_buttons_with_same_thumbnail(self, preset):
-        """Refresh buttons that have the same thumbnail as the given preset.
+    def refresh_buttons_for_preset_by_reference(self, preset):
+        """Refresh all buttons that display the same preset (by name matching).
         
-        Optimized to use cached hashes when available instead of recomputing.
+        Used when the current brush changes to update any buttons showing that preset.
         """
         if not preset:
             return
 
         preset_name = preset.name()
         
-        # Use cached hash if available, otherwise compute
-        target_hash = self.preset_thumbnail_cache.get(preset_name)
-        if target_hash is None:
-            target_hash = self.get_preset_thumbnail_hash(preset)
-            if target_hash is None:
-                return
-            # Cache it for future use
-            self.preset_thumbnail_cache[preset_name] = target_hash
-
-        # Find buttons with matching hash and update in-place
+        # Find and update all buttons showing this preset
         buttons_updated = False
         for grid_info in self.grids:
-            layout = grid_info.get("layout")
-            if not layout:
-                continue
-            
-            for i, p in enumerate(grid_info["brush_presets"]):
-                p_name = p.name()
-                # Use cached hash if available
-                p_hash = self.preset_thumbnail_cache.get(p_name)
-                if p_hash is None:
-                    p_hash = self.get_preset_thumbnail_hash(p)
-                    if p_hash is not None:
-                        self.preset_thumbnail_cache[p_name] = p_hash
-                
-                if p_hash == target_hash:
+            for i, p in enumerate(grid_info.get("brush_presets", [])):
+                if p.name() == preset_name:
                     # Update preset reference
                     grid_info["brush_presets"][i] = preset
                     
