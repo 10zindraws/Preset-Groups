@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import QWidget, QScrollArea
 from PyQt5.QtCore import Qt
 
 from ..utils.styles import SELECTION_HIGHLIGHT, GRID_NAME_COLOR, DARK_BG
+from ..utils.config_utils import get_group_name_font_size, get_group_name_padding
 
 
 # Common hover/pressed states
@@ -18,17 +19,19 @@ _BUTTON_STATES = """
 
 
 def _make_name_button_style(bg_color, text_color, border="none"):
-    """Generate a name button stylesheet."""
+    """Generate a name button stylesheet with dynamic font size and padding."""
+    font_size = get_group_name_font_size()
+    padding = get_group_name_padding()
     return f"""
         QPushButton {{
             background-color: {bg_color};
             color: {text_color};
             font-weight: bold;
-            font-size: 12px;
+            font-size: {font_size}px;
             border: {border};
             border-radius: 2px;
             text-align: left;
-            padding: 2px 4px;
+            padding: {padding}px 4px;
         }}
     """ + _BUTTON_STATES
 
@@ -44,10 +47,24 @@ def _make_collapse_button_style(bg_color):
     """ + _BUTTON_STATES
 
 
-# Pre-computed stylesheet templates for grid selection states
-_SELECTED_NAME_BUTTON_STYLE = _make_name_button_style(
-    DARK_BG, SELECTION_HIGHLIGHT, f"2px solid {SELECTION_HIGHLIGHT}"
-)
+def get_selected_name_button_style():
+    """Generate the selected name button style with dynamic font/padding."""
+    return _make_name_button_style(
+        DARK_BG, SELECTION_HIGHLIGHT, f"2px solid {SELECTION_HIGHLIGHT}"
+    )
+
+
+def get_active_name_button_style():
+    """Generate the active name button style with dynamic font/padding."""
+    return _make_name_button_style(DARK_BG, SELECTION_HIGHLIGHT)
+
+
+def get_inactive_name_button_style():
+    """Generate the inactive name button style with dynamic font/padding."""
+    return _make_name_button_style("#383838", GRID_NAME_COLOR)
+
+
+# Pre-computed stylesheet templates for collapse buttons (these don't change)
 _SELECTED_COLLAPSE_BUTTON_STYLE = _make_collapse_button_style(DARK_BG)
 _SELECTED_WIDGET_STYLE = f"""
     QWidget {{
@@ -56,10 +73,7 @@ _SELECTED_WIDGET_STYLE = f"""
     }}
 """
 
-_ACTIVE_NAME_BUTTON_STYLE = _make_name_button_style(DARK_BG, SELECTION_HIGHLIGHT)
 _ACTIVE_COLLAPSE_BUTTON_STYLE = _make_collapse_button_style(DARK_BG)
-
-_INACTIVE_NAME_BUTTON_STYLE = _make_name_button_style("#383838", GRID_NAME_COLOR)
 _INACTIVE_COLLAPSE_BUTTON_STYLE = _make_collapse_button_style("#383838")
 
 
@@ -275,7 +289,7 @@ class SelectionManagerMixin:
             if grid in self.selected_grids:
                 self._apply_grid_widget_styles(
                     grid,
-                    _SELECTED_NAME_BUTTON_STYLE,
+                    get_selected_name_button_style(),
                     _SELECTED_COLLAPSE_BUTTON_STYLE,
                     _SELECTED_WIDGET_STYLE
                 )
@@ -304,14 +318,14 @@ class SelectionManagerMixin:
         if is_active:
             self._apply_grid_widget_styles(
                 grid_info,
-                _ACTIVE_NAME_BUTTON_STYLE,
+                get_active_name_button_style(),
                 _ACTIVE_COLLAPSE_BUTTON_STYLE,
                 widget_style
             )
         else:
             self._apply_grid_widget_styles(
                 grid_info,
-                _INACTIVE_NAME_BUTTON_STYLE,
+                get_inactive_name_button_style(),
                 _INACTIVE_COLLAPSE_BUTTON_STYLE,
                 widget_style
             )

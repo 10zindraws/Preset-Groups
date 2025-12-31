@@ -306,6 +306,10 @@ class PresetGroupsDocker(
         
         if hasattr(self, 'brush_size_poll_timer') and not self.brush_size_poll_timer.isActive():
             self.brush_size_poll_timer.start(_BRUSH_POLL_INTERVAL)
+        
+        if hasattr(self, '_brush_editor_check_timer') and not self._brush_editor_check_timer.isActive():
+            from .managers.thumbnail_manager import _BRUSH_EDITOR_CHECK_INTERVAL
+            self._brush_editor_check_timer.start(_BRUSH_EDITOR_CHECK_INTERVAL)
     
     def _pause_timers(self):
         """Pause all periodic timers to save CPU when docker is hidden."""
@@ -319,6 +323,9 @@ class PresetGroupsDocker(
         
         if hasattr(self, 'brush_size_poll_timer'):
             self.brush_size_poll_timer.stop()
+        
+        if hasattr(self, '_brush_editor_check_timer'):
+            self._brush_editor_check_timer.stop()
 
     def _is_docker_visible(self):
         """Check if the docker is visible and should process updates.
@@ -485,9 +492,10 @@ class PresetGroupsDocker(
         top_row_widget.setFixedHeight(self.setting_btn.sizeHint().height() + 6)
         main_layout.addWidget(top_row_widget)
 
+        # Create brush size poll timer but don't start it yet
+        # It will be started by _start_timers() when docker becomes visible
         self.brush_size_poll_timer = QTimer()
         self.brush_size_poll_timer.timeout.connect(self.poll_brush_size)
-        self.brush_size_poll_timer.start(_BRUSH_POLL_INTERVAL)
 
     def _create_grids_section(self, main_layout):
         """Create the scrollable grids section."""
@@ -627,7 +635,46 @@ class PresetGroupsDocker(
         for grid in self.grids:
             self.update_grid_style(grid)
             self._refresh_grid_button_styles(grid)
+            self._refresh_collapse_button_size(grid)
         self._refresh_icon_button_styles()
+
+    def _refresh_collapse_button_size(self, grid):
+        """Refresh the collapse button size based on current group font size."""
+        from .utils.config_utils import get_collapse_button_size
+        from PyQt5.QtCore import QSize
+        
+        collapse_button = grid.get("collapse_button")
+        name_button = grid.get("name_button") or grid.get("name_label")
+        
+        if not collapse_button or not name_button:
+            return
+        
+        # Get current name button height after style update
+        name_button.adjustSize()
+        name_button_height = name_button.sizeHint().height()
+        
+        # Calculate and apply new collapse button dimensions
+        btn_width, btn_height = get_collapse_button_size(name_button_height)
+        collapse_button.setFixedSize(btn_width, btn_height)
+        
+        # Update icon size based on width
+        icon_size = btn_width - 8
+        collapse_button.setIconSize(QSize(icon_size, icon_size))
+        
+        # Re-apply the icon with new size
+        from krita import Krita
+        is_collapsed = grid.get("is_collapsed", False)
+        icon_name = "arrow-right" if is_collapsed else "arrow-down"
+        icon = Krita.instance().icon(icon_name)
+        if icon and not icon.isNull():
+            from PyQt5.QtCore import Qt
+            from PyQt5.QtGui import QIcon
+            pixmap = icon.pixmap(icon_size * 2, icon_size * 2)
+            if not pixmap.isNull():
+                scaled = pixmap.scaled(icon_size, icon_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                collapse_button.setIcon(QIcon(scaled))
+            else:
+                collapse_button.setIcon(icon)
 
     def _refresh_grid_button_styles(self, grid):
         """Refresh styles for buttons within a grid."""

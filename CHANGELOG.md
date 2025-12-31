@@ -1,6 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2025-12-30
+
+### Changed
+- Increased padding for group names
+
+### Added
+- Ability to change group font Size
+
+### Fixed
+- Stuttering/lag while drawing, zooming, panning with the plugin active
+- Unnecessary CPU usage when the Preset Groups docker is hidden
+
 ## [1.0.8] - 2025-12-26
 
 ### Changed

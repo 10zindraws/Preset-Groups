@@ -150,3 +150,99 @@ def get_brush_name_label_height(lines: int = 1) -> int:
     line_height = int(font_size * 1.3)  # Line height multiplier
     padding = 4  # Top + bottom padding
     return (line_height * lines) + padding
+
+
+# Group name font sizing constants
+_GROUP_NAME_MIN_FONT_SIZE = 8
+_GROUP_NAME_MAX_FONT_SIZE = 24
+_GROUP_NAME_DEFAULT_FONT_SIZE = 12
+
+# Default padding for group name row (when font size is at default)
+_GROUP_NAME_DEFAULT_PADDING = 2
+
+# Temporary font size override for live preview (None = use config)
+_temp_group_name_font_size = None
+
+
+def get_group_name_font_size_config() -> int:
+    """Get the configured group name font size from config.
+    
+    Returns:
+        Font size in pixels from config, or default if not set.
+    """
+    return _get_layout_value("group_name_font_size", _GROUP_NAME_DEFAULT_FONT_SIZE)
+
+
+def set_group_name_font_size_temp(size: int) -> None:
+    """Set a temporary font size override for live preview.
+    
+    Args:
+        size: Font size in pixels, or None to clear the override.
+    """
+    global _temp_group_name_font_size
+    _temp_group_name_font_size = size
+
+
+def clear_group_name_font_size_temp() -> None:
+    """Clear the temporary group name font size override."""
+    global _temp_group_name_font_size
+    _temp_group_name_font_size = None
+
+
+def get_group_name_font_size() -> int:
+    """Get font size for group names.
+    
+    Returns the temporary preview size if set, otherwise the configured value.
+    The value is clamped between min and max thresholds.
+    """
+    global _temp_group_name_font_size
+    if _temp_group_name_font_size is not None:
+        size = _temp_group_name_font_size
+    else:
+        size = get_group_name_font_size_config()
+    # Clamp between min and max
+    return max(_GROUP_NAME_MIN_FONT_SIZE, min(_GROUP_NAME_MAX_FONT_SIZE, size))
+
+
+def get_group_name_padding() -> int:
+    """Calculate padding for group name row based on font size.
+    
+    Padding scales proportionally with font size to maintain visual balance.
+    
+    Returns:
+        Padding in pixels (applied to top and bottom).
+    """
+    font_size = get_group_name_font_size()
+    # Scale padding proportionally: at default size (12px), use default padding (2px)
+    # For each px above/below default, adjust padding proportionally
+    scale_factor = font_size / _GROUP_NAME_DEFAULT_FONT_SIZE
+    padding = int(_GROUP_NAME_DEFAULT_PADDING * scale_factor)
+    return max(4, padding)  # Ensure at least 4px padding for grid names
+
+
+def get_collapse_button_size(name_button_height: int) -> tuple:
+    """Calculate collapse button dimensions based on group font size.
+    
+    Sizing behavior:
+    - At font size 12 (default): Square button matching name button height
+    - At font size > 12: Height matches name button, width stays at base size (tall rectangle)
+    - At font size < 12: Both dimensions scale proportionally (stays square, just smaller)
+    
+    Args:
+        name_button_height: The current height of the name button in pixels.
+    
+    Returns:
+        Tuple of (width, height) in pixels for the collapse button.
+    """
+    font_size = get_group_name_font_size()
+    
+    if font_size >= _GROUP_NAME_DEFAULT_FONT_SIZE:
+        # Font size >= 12: height scales with name button, width stays at base
+        # Calculate what the base width would be at font size 12
+        scale_factor = font_size / _GROUP_NAME_DEFAULT_FONT_SIZE
+        base_width = int(name_button_height / scale_factor)
+        return (base_width, name_button_height)
+    else:
+        # Font size < 12: both dimensions scale proportionally (stays square)
+        # The name_button_height already reflects the smaller size
+        return (name_button_height, name_button_height)

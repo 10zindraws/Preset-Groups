@@ -21,7 +21,13 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QSize, QTimer
 from PyQt5.QtGui import QIcon
 
-from ..utils.config_utils import get_brush_icon_size, get_spacing_between_buttons
+from ..utils.config_utils import (
+    get_brush_icon_size,
+    get_spacing_between_buttons,
+    get_group_name_font_size,
+    get_group_name_padding,
+    get_collapse_button_size,
+)
 from ..utils.styles import GRID_NAME_COLOR
 from ..widgets.grid_container import ClickableGridWidget, DraggableGridContainer
 from ..widgets.draggable_grid_row import DraggableGridRow
@@ -41,20 +47,25 @@ _COLLAPSE_BUTTON_STYLE = """
     QPushButton:pressed { background-color: rgba(0, 0, 0, 0.5); }
 """
 
-_NAME_BUTTON_STYLE = """
-    QPushButton {
-        background-color: #383838;
-        color: #ffffff;
-        font-weight: bold;
-        font-size: 12px;
-        border: none;
-        border-radius: 2px;
-        text-align: left;
-        padding: 2px 4px;
-    }
-    QPushButton:hover { background-color: rgba(0, 0, 0, 0.3); }
-    QPushButton:pressed { background-color: rgba(0, 0, 0, 0.5); }
-"""
+
+def _get_name_button_style():
+    """Generate a name button stylesheet with dynamic font size and padding."""
+    font_size = get_group_name_font_size()
+    padding = get_group_name_padding()
+    return f"""
+        QPushButton {{
+            background-color: #383838;
+            color: {GRID_NAME_COLOR};
+            font-weight: bold;
+            font-size: {font_size}px;
+            border: none;
+            border-radius: 2px;
+            text-align: left;
+            padding: {padding}px 4px;
+        }}
+        QPushButton:hover {{ background-color: rgba(0, 0, 0, 0.3); }}
+        QPushButton:pressed {{ background-color: rgba(0, 0, 0, 0.5); }}
+    """
 
 
 class GridManagerMixin:
@@ -64,11 +75,15 @@ class GridManagerMixin:
         """Create and configure the collapse button for a grid."""
         collapse_button = QPushButton()
         collapse_button.setObjectName("collapse_button")
-        collapse_button.setFixedSize(name_button_height, name_button_height)
+        
+        # Calculate collapse button dimensions based on font size
+        btn_width, btn_height = get_collapse_button_size(name_button_height)
+        collapse_button.setFixedSize(btn_width, btn_height)
         collapse_button.setStyleSheet(_COLLAPSE_BUTTON_STYLE)
         collapse_button.clicked.connect(lambda: self.toggle_grid_collapse(grid_info))
         
-        icon_size = name_button_height - 8
+        # Icon size based on the smaller dimension (width) to keep icon square
+        icon_size = btn_width - 8
         collapse_button.setIconSize(QSize(icon_size, icon_size))
         self._set_collapse_button_icon(
             collapse_button, 
@@ -81,7 +96,7 @@ class GridManagerMixin:
     def _create_name_button(self, grid_info):
         """Create and configure the name button for a grid."""
         name_button = QPushButton(grid_info["name"])
-        name_button.setStyleSheet(_NAME_BUTTON_STYLE)
+        name_button.setStyleSheet(_get_name_button_style())
         name_button.drag_start_pos = None
         name_button.is_dragging_grid = False
         self._setup_name_button_events(name_button, grid_info)

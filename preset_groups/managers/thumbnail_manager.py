@@ -36,7 +36,9 @@ _BRUSH_EDITOR_PATTERNS = [
     "brush settings",
     "scratchpad",                   # Scratchpad is part of brush editor
 ]
-_BRUSH_EDITOR_CHECK_INTERVAL = 300  # ms - check brush editor state
+# PERFORMANCE: Increased interval significantly to reduce stuttering during drawing
+# The brush editor is typically open for extended periods, so checking every 750ms is sufficient
+_BRUSH_EDITOR_CHECK_INTERVAL = 750  # ms - check brush editor state (was 300ms, increased to reduce overhead)
 _REFRESH_DELAY = 200  # ms - delay after brush editor close before refresh
 
 
@@ -48,36 +50,37 @@ class ThumbnailManagerMixin:
         
         Uses a presence-based detection approach: counts potential brush editor
         widgets each cycle. When count drops from >0 to 0, editor was closed.
+        Timer is started/stopped by visibility-aware mechanism in preset_groups.py.
         """
         self._brush_editor_widget_count = 0
         self._brush_editor_check_timer = QTimer()
         self._brush_editor_check_timer.timeout.connect(self._check_brush_editor_state)
-        self._brush_editor_check_timer.start(_BRUSH_EDITOR_CHECK_INTERVAL)
+        # Don't start yet - will be started by _start_timers() when docker becomes visible
     
     def _count_brush_editor_widgets(self):
         """Count the number of visible brush editor related widgets.
         
         Returns the count of widgets that appear to be brush editor dialogs.
-        Uses a comprehensive search across top-level widgets.
+        PERFORMANCE OPTIMIZED: Early exit once we find at least one.
         """
-        count = 0
         try:
             from PyQt5.QtWidgets import QApplication
             
             # Check all top-level widgets (dialogs, popups, windows)
             for widget in QApplication.topLevelWidgets():
                 if widget.isVisible() and self._is_brush_editor_widget(widget):
-                    count += 1
+                    return 1  # Early exit - we only care if count is 0 or >0
             
         except Exception:
             pass
         
-        return count
+        return 0
     
     def _is_brush_editor_widget(self, widget):
         """Check if a widget is the Brush Editor based on class name and title.
         
-        Uses comprehensive pattern matching against known Krita class names.
+        Uses pattern matching against known Krita class names.
+        PERFORMANCE: Avoids expensive findChildren traversal.
         """
         if not widget or not widget.isVisible():
             return False
@@ -98,14 +101,6 @@ class ThumbnailManagerMixin:
                 if pattern in combined:
                     return True
             
-            # Additional heuristic: check if it's a dialog with brush-related content
-            # by examining the widget's children for known brush editor components
-            if isinstance(widget, QDialog) or widget.isWindow():
-                for child in widget.findChildren(QWidget):
-                    child_class = child.__class__.__name__.lower()
-                    if any(p in child_class for p in ["paintop", "scratchpad", "preseteditor", "brushpreview"]):
-                        return True
-            
             return False
         except Exception:
             return False
@@ -115,7 +110,13 @@ class ThumbnailManagerMixin:
         
         Uses widget counting approach: when count transitions from >0 to 0,
         the brush editor was closed and we refresh the current preset thumbnail.
+        
+        PERFORMANCE: Skip expensive widget scanning if docker isn't visible.
         """
+        # Skip if docker isn't visible - no need to track brush editor state
+        if hasattr(self, '_is_docker_visible') and not self._is_docker_visible():
+            return
+        
         current_count = self._count_brush_editor_widgets()
         
         # Detect transition: had editor widgets -> now have none (closed)
