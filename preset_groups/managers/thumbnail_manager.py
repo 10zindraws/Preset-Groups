@@ -51,11 +51,16 @@ class ThumbnailManagerMixin:
         Uses a presence-based detection approach: counts potential brush editor
         widgets each cycle. When count drops from >0 to 0, editor was closed.
         Timer is started/stopped by visibility-aware mechanism in preset_groups.py.
+        
+        Also tracks the preset name before editing to detect renames.
         """
         self._brush_editor_widget_count = 0
         self._brush_editor_check_timer = QTimer()
         self._brush_editor_check_timer.timeout.connect(self._check_brush_editor_state)
         # Don't start yet - will be started by _start_timers() when docker becomes visible
+        
+        # Track preset being edited to detect name changes
+        self._editing_preset_name = None
     
     def _count_brush_editor_widgets(self):
         """Count the number of visible brush editor related widgets.
@@ -110,6 +115,7 @@ class ThumbnailManagerMixin:
         
         Uses widget counting approach: when count transitions from >0 to 0,
         the brush editor was closed and we refresh the current preset thumbnail.
+        Also detects name changes by tracking the preset name before editing.
         
         PERFORMANCE: Skip expensive widget scanning if docker isn't visible.
         """
@@ -119,9 +125,18 @@ class ThumbnailManagerMixin:
         
         current_count = self._count_brush_editor_widgets()
         
+        # Detect transition: no editor -> editor opened (capture preset name)
+        if self._brush_editor_widget_count == 0 and current_count > 0:
+            # Brush Editor just opened - capture current preset name for rename detection
+            current_preset = self._get_current_preset()
+            if current_preset:
+                self._editing_preset_name = current_preset.name()
+            else:
+                self._editing_preset_name = None
+        
         # Detect transition: had editor widgets -> now have none (closed)
         if self._brush_editor_widget_count > 0 and current_count == 0:
-            # Brush Editor was just closed - refresh current preset thumbnail
+            # Brush Editor was just closed - check for rename and refresh thumbnail
             self._on_brush_editor_closed()
         
         self._brush_editor_widget_count = current_count
@@ -129,11 +144,85 @@ class ThumbnailManagerMixin:
     def _on_brush_editor_closed(self):
         """Called when Brush Editor is closed.
         
-        Refreshes only the currently selected preset's thumbnail since
-        that's the one most likely to have been edited.
+        Detects if the preset was renamed by checking if the old name still exists.
+        If renamed, updates all buttons referencing the old preset to the new one.
+        Also refreshes the current preset's thumbnail.
         """
         # Small delay to allow Krita to finalize any changes
-        QTimer.singleShot(_REFRESH_DELAY, self._refresh_current_preset_thumbnail)
+        QTimer.singleShot(_REFRESH_DELAY, self._check_preset_rename_and_refresh)
+    
+    def _check_preset_rename_and_refresh(self):
+        """Check if the preset was renamed and handle accordingly.
+        
+        Called after Brush Editor closes. If the preset that was being edited
+        no longer exists under its original name but the current preset exists
+        under a new name, we update all buttons that referenced the old name.
+        """
+        if not self.grids:
+            self._editing_preset_name = None
+            return
+        
+        # Get fresh preset dictionary from Krita
+        if hasattr(self, '_invalidate_preset_cache'):
+            self._invalidate_preset_cache()
+        fresh_preset_dict = Krita.instance().resources("preset")
+        
+        # Get the currently selected preset (this is the one that was edited)
+        current_preset = self._get_current_preset()
+        current_name = current_preset.name() if current_preset else None
+        
+        # Check if a rename occurred
+        old_name = self._editing_preset_name
+        rename_occurred = (
+            old_name is not None 
+            and current_name is not None 
+            and old_name != current_name
+            and old_name not in fresh_preset_dict  # Old name no longer exists
+            and current_name in fresh_preset_dict  # New name exists
+        )
+        
+        if rename_occurred:
+            # Update all buttons that had the old preset name
+            self._update_renamed_preset(old_name, current_name, fresh_preset_dict)
+        
+        # Clear the tracking variable
+        self._editing_preset_name = None
+        
+        # Also do the normal thumbnail refresh for the current preset
+        self._refresh_current_preset_thumbnail()
+    
+    def _update_renamed_preset(self, old_name, new_name, preset_dict):
+        """Update all buttons referencing the old preset name to the new one.
+        
+        Args:
+            old_name: The original preset name before renaming
+            new_name: The new preset name after renaming
+            preset_dict: Fresh preset dictionary from Krita
+        """
+        new_preset = preset_dict.get(new_name)
+        if not new_preset:
+            return
+        
+        buttons_updated = False
+        
+        for grid_info in self.grids:
+            presets = grid_info.get("brush_presets", [])
+            for idx, preset in enumerate(presets):
+                if preset.name() == old_name:
+                    # Update the preset reference in the data
+                    grid_info["brush_presets"][idx] = new_preset
+                    
+                    # Find and update the button widget
+                    button = self._find_button_for_preset_in_grid(grid_info, idx)
+                    if button:
+                        if hasattr(button, 'update_preset'):
+                            button.update_preset(new_preset)
+                        elif hasattr(button, 'force_refresh_thumbnail'):
+                            button.force_refresh_thumbnail(new_preset)
+                        buttons_updated = True
+        
+        if buttons_updated:
+            self.save_grids_data()
     
     def _refresh_current_preset_thumbnail(self):
         """Refresh only the currently selected preset's thumbnail.

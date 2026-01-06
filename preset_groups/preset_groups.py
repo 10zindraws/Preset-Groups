@@ -469,10 +469,12 @@ class PresetGroupsDocker(
         self.brush_size_slider.valueChanged.connect(self.on_brush_size_slider_changed)
         top_row_layout.addWidget(self.brush_size_slider, 1)
 
-        top_row_layout.addSpacerItem(QSpacerItem(27, 0, QSizePolicy.Fixed, QSizePolicy.Minimum))
+        # Flexible spacer - preferred 27px, can shrink to 4px when docker is narrow
+        self.top_row_spacer = QSpacerItem(27, 0, QSizePolicy.Preferred, QSizePolicy.Minimum)
+        top_row_layout.addSpacerItem(self.top_row_spacer)
 
         self.brush_size_number = QLineEdit()
-        self.brush_size_number.setFixedWidth(60)
+        self.brush_size_number.setFixedWidth(50)
         self.brush_size_number.setAlignment(Qt.AlignLeft)
         validator = QIntValidator(1, self.max_brush_size, self.brush_size_number)
         self.brush_size_number.setValidator(validator)
@@ -534,8 +536,9 @@ class PresetGroupsDocker(
         self.icon_size_slider.valueChanged.connect(self.on_brush_size_changed)
         button_layout.addWidget(self.icon_size_slider, 1)
 
-        # Spacer
-        button_layout.addSpacerItem(QSpacerItem(45, 0, QSizePolicy.Fixed, QSizePolicy.Minimum))
+        # Flexible spacer - preferred 45px, can shrink when docker is narrow
+        self.bottom_row_spacer = QSpacerItem(45, 0, QSizePolicy.Preferred, QSizePolicy.Minimum)
+        button_layout.addSpacerItem(self.bottom_row_spacer)
 
         # Add Brush button
         self.add_brush_button = self.create_icon_button("addbrushicon", self.add_current_brush)
