@@ -6,12 +6,13 @@ brushes, updating brush size, and tracking the current brush preset.
 PERFORMANCE OPTIMIZATIONS:
 - Cached active view reference (refreshed via signals)
 - Debounced I/O operations
-- Visibility-aware polling
+- Visibility-aware refreshes
 """
 
 from krita import Krita  # type: ignore
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, QSize
 from PyQt5.QtGui import QIntValidator
+from PyQt5.QtWidgets import QStyle, QStyleOptionFrame
 
 from ..utils.data_manager import check_common_config, save_common_config
 from ..utils.config_utils import (
@@ -31,6 +32,8 @@ _ABSOLUTE_MAX_SIZE = 10000
 
 # Debounce delay for icon size slider (milliseconds)
 _ICON_SIZE_DEBOUNCE_MS = 50
+_BRUSH_SIZE_ACTION_DEBOUNCE_MS = 100
+_BRUSH_ACTION_DISCOVERY_DELAY_MS = 200
 
 
 class BrushManagerMixin:
@@ -79,6 +82,33 @@ class BrushManagerMixin:
             self.brush_size_number.setValidator(
                 QIntValidator(_MIN_BRUSH_SIZE, new_max, self.brush_size_number)
             )
+            self._update_brush_size_number_width(new_max)
+
+    def _update_brush_size_number_width(self, max_size):
+        """Size the brush size textbox to fit the max value + suffix."""
+        if not hasattr(self, 'brush_size_number'):
+            return
+
+        digit_count = max(1, len(str(int(max_size))))
+        sample_text = f"{'8' * digit_count} px"
+        metrics = self.brush_size_number.fontMetrics()
+        text_width = metrics.horizontalAdvance(sample_text)
+
+        option = QStyleOptionFrame()
+        option.initFrom(self.brush_size_number)
+        option.lineWidth = self.brush_size_number.style().pixelMetric(
+            QStyle.PM_DefaultFrameWidth, option, self.brush_size_number
+        )
+        option.midLineWidth = 0
+
+        size = self.brush_size_number.style().sizeFromContents(
+            QStyle.CT_LineEdit,
+            option,
+            QSize(text_width, metrics.height()),
+            self.brush_size_number,
+        )
+        self.brush_size_number.setFixedWidth(size.width() + 4)
+        self.brush_size_number.updateGeometry()
 
     def _update_grids_for_icon_size(self):
         """Update all grids after icon size change."""
@@ -242,6 +272,72 @@ class BrushManagerMixin:
         
         self._apply_brush_size(val)
 
+    def setup_brush_size_action_detection(self):
+        """Connect to Krita actions that change brush size without polling."""
+        if getattr(self, "_brush_size_action_detection_setup", False):
+            return
+
+        self._brush_size_action_detection_setup = True
+        QTimer.singleShot(_BRUSH_ACTION_DISCOVERY_DELAY_MS, self._discover_brush_size_actions)
+
+    def _discover_brush_size_actions(self):
+        """Discover and connect to brush size increase/decrease actions."""
+        if getattr(self, "_brush_size_actions_connected", False):
+            return True
+
+        app = Krita.instance()
+        if not app:
+            return False
+
+        inc_candidates = [
+            "increase_brush_size",
+            "brush_size_increase",
+            "IncreaseBrushSize",
+            "increase_brushsize",
+        ]
+        dec_candidates = [
+            "decrease_brush_size",
+            "brush_size_decrease",
+            "DecreaseBrushSize",
+            "decrease_brushsize",
+        ]
+
+        inc_action = None
+        dec_action = None
+        for name in inc_candidates:
+            action = app.action(name)
+            if action:
+                inc_action = action
+                break
+        for name in dec_candidates:
+            action = app.action(name)
+            if action:
+                dec_action = action
+                break
+
+        if inc_action:
+            inc_action.triggered.connect(self._on_brush_size_action_triggered)
+        if dec_action:
+            dec_action.triggered.connect(self._on_brush_size_action_triggered)
+
+        self._brush_size_actions_connected = bool(inc_action or dec_action)
+        return self._brush_size_actions_connected
+
+
+    def _on_brush_size_action_triggered(self):
+        """Handle brush size increase/decrease action triggered."""
+        self._schedule_brush_size_refresh()
+
+    def _schedule_brush_size_refresh(self, delay_ms=_BRUSH_SIZE_ACTION_DEBOUNCE_MS):
+        """Debounce brush size refresh to wait for Krita to apply changes."""
+        if not hasattr(self, "_brush_size_refresh_timer"):
+            self._brush_size_refresh_timer = QTimer()
+            self._brush_size_refresh_timer.setSingleShot(True)
+            self._brush_size_refresh_timer.timeout.connect(self.refresh_brush_size_from_view)
+
+        self._brush_size_refresh_timer.stop()
+        self._brush_size_refresh_timer.start(delay_ms)
+
     def _apply_brush_size(self, size):
         """Apply brush size to current view."""
         view = self._get_active_view()
@@ -285,12 +381,12 @@ class BrushManagerMixin:
         config["brush_slider"]["max_brush_size"] = new_max
         save_common_config(config)
 
-    def poll_brush_size(self):
-        """Poll the current brush size from Krita and update top controls.
-        
-        Includes visibility check to avoid unnecessary work when docker is hidden.
-        """
-        # Skip polling if docker isn't visible (performance optimization for Linux)
+    def refresh_brush_size_from_view(self):
+        """Refresh the current brush size from Krita and update top controls."""
+        if not hasattr(self, "brush_size_slider") or not hasattr(self, "brush_size_number"):
+            return
+
+        # Skip updates if docker isn't visible (performance optimization for Linux)
         if hasattr(self, '_is_docker_visible') and not self._is_docker_visible():
             return
         

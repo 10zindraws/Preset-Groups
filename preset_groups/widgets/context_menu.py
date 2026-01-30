@@ -7,26 +7,29 @@ from PyQt5.QtWidgets import QFrame, QPushButton, QVBoxLayout
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QCursor
 
+from ..utils.styles import WindowColors, ButtonColors
 
-# Shared stylesheet for context menu popups
-_CONTEXT_MENU_STYLE = """
-    QFrame {
-        background-color: #2b2b2b;
-        border: 1px solid #555;
-        border-radius: 4px;
-    }
-    QPushButton {
-        background-color: #3c3c3c;
-        color: #e0e0e0;
-        border: none;
-        border-radius: 2px;
-        padding: 8px 16px;
-        text-align: left;
-        min-width: 100px;
-    }
-    QPushButton:hover { background-color: #4a4a4a; }
-    QPushButton:pressed { background-color: #2a2a2a; }
-"""
+
+def _get_context_menu_style():
+    """Generate the context menu stylesheet using theme colors."""
+    return f"""
+        QFrame {{
+            background-color: {WindowColors.BackgroundAlternate};
+            border: 1px solid {ButtonColors.BorderNormal};
+            border-radius: 4px;
+        }}
+        QPushButton {{
+            background-color: {ButtonColors.BackgroundAlt};
+            color: {WindowColors.ForegroundLink};
+            border: none;
+            border-radius: 2px;
+            padding: 8px 16px;
+            text-align: left;
+            min-width: 100px;
+        }}
+        QPushButton:hover {{ background-color: {ButtonColors.BackgroundHover}; }}
+        QPushButton:pressed {{ background-color: {ButtonColors.BackgroundPressed}; }}
+    """
 
 
 class _BaseContextMenu(QFrame):
@@ -42,7 +45,7 @@ class _BaseContextMenu(QFrame):
         self.setWindowFlags(
             Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool
         )
-        self.setStyleSheet(_CONTEXT_MENU_STYLE)
+        self.setStyleSheet(_get_context_menu_style())
         
         layout = QVBoxLayout()
         layout.setContentsMargins(2, 2, 2, 2)

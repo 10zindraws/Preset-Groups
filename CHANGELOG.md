@@ -3,6 +3,22 @@ All notable changes to this project will be documented in this file.
 
 
 
+## [1.2.0] - 2026-01-30
+
+### Fixed
+- Brush size slider box was cut off from previous version
+- Collapse button would scale bigger when Settings dialog closes
+
+### Changed
+- Refactored so styles.py manages all colors
+- Use shortcut key detection instead of inefficient polling detection for brush size changes to update the brush size slider
+
+### Added
+- Ability to resize thumbnails with ctrl + mouse scroll
+- Krita themes compatibility
+
+
+
 ## [1.1.2] - 2026-01-06
 
 ### Fixed

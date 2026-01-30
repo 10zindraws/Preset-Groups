@@ -10,10 +10,10 @@ from PyQt5.QtCore import Qt, QPoint, QMimeData, QRect, QEvent
 from PyQt5.QtGui import QDrag, QPainter, QColor
 
 from ..utils.drag_utils import encode_grid_single, encode_grid_multi, is_grid_drag, decode_grid_single, decode_grid_multi
+from ..utils.styles import SelectionColors, DragColors
 
 
 # Visual constants for drop zone highlighting
-_DROP_HIGHLIGHT_COLOR = QColor(70, 200, 255, 255)  # Bright cyan, fully opaque
 _DROP_HIGHLIGHT_HEIGHT = 4  # Thicker highlight line for better visibility
 
 
@@ -46,7 +46,7 @@ class DropIndicatorOverlay(QWidget):
         
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setBrush(_DROP_HIGHLIGHT_COLOR)
+        painter.setBrush(SelectionColors.DropHighlightQColor)
         painter.setPen(Qt.NoPen)
         
         width = self.width()
@@ -176,10 +176,10 @@ class DraggableGridRow(QWidget):
         height = 24 * len(grids)
         width = 150
         pixmap = QPixmap(width, height)
-        pixmap.fill(QColor(60, 60, 60))
-        
+        pixmap.fill(DragColors.PixmapBackgroundQColor)
+
         painter = QPainter(pixmap)
-        painter.setPen(QColor(200, 200, 200))
+        painter.setPen(DragColors.PixmapTextQColor)
         for i, grid in enumerate(grids):
             painter.drawText(5, 18 + i * 24, grid.get("name", "Grid"))
         painter.end()

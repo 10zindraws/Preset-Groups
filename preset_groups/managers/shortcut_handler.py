@@ -238,12 +238,17 @@ class ShortcutHandlerMixin:
         - Handles Esc / focus-out for inline grid name editor.
         - Fallback handler to capture global shortcut when QShortcut is blocked.
         - Handles navigation shortcuts for grid brush selection.
+        - Handles Ctrl+Wheel for thumbnail resizing in the docker.
         
         PERFORMANCE CRITICAL: This runs for EVERY event in the application.
         Must return as fast as possible for non-handled events.
         """
         # Fast path: only process KeyPress and specific focus events
         event_type = event.type()
+
+        # Handle Wheel events for Ctrl+scroll thumbnail resizing
+        if event_type == QEvent.Wheel:
+            return self._handle_wheel_event(obj, event)
         
         # Most events are not keyboard - exit immediately
         if event_type != QEvent.KeyPress and event_type != QEvent.FocusOut:
@@ -279,6 +284,58 @@ class ShortcutHandlerMixin:
                     return self._handle_nav_left_key_press(event)
                 elif key == right_key:
                     return self._handle_nav_right_key_press(event)
+        except Exception:
+            pass
+        return False
+
+    def _handle_wheel_event(self, obj, event):
+        """Handle wheel events for Ctrl+scroll thumbnail resizing.
+
+        When Ctrl is held and the wheel is scrolled within the docker's
+        scroll area, resize thumbnails instead of scrolling.
+        """
+        try:
+            # Only handle if Ctrl is pressed
+            if not (event.modifiers() & Qt.ControlModifier):
+                return False
+
+            # Check if the event is from our scroll area's viewport
+            scroll_area = getattr(self, 'scroll_area', None)
+            if not scroll_area:
+                return False
+
+            viewport = scroll_area.viewport()
+            if obj != viewport:
+                return False
+
+            # Get the scroll direction
+            angle_delta = event.angleDelta().y()
+            if angle_delta == 0:
+                return False
+
+            # Get current icon size slider
+            icon_slider = getattr(self, 'icon_size_slider', None)
+            if not icon_slider:
+                return False
+
+            # Calculate step size (scale with wheel delta)
+            step = 7 if abs(angle_delta) >= 120 else 2
+
+            # Adjust icon size
+            current_value = icon_slider.value()
+            if angle_delta > 0:
+                # Scroll up - increase size
+                new_value = min(icon_slider.maximum(), current_value + step)
+            else:
+                # Scroll down - decrease size
+                new_value = max(icon_slider.minimum(), current_value - step)
+
+            if new_value != current_value:
+                icon_slider.setValue(new_value)
+
+            # Consume the event to prevent normal scrolling
+            return True
+
         except Exception:
             pass
         return False

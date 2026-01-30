@@ -50,7 +50,7 @@ from .utils.config_utils import (
     get_spacing_between_buttons,
     get_exclusive_uncollapse,
 )
-from .utils.styles import docker_btn_style
+from .utils.styles import docker_btn_style, WindowColors, OverlayColors, SliderColors
 from .dialogs.settings_dialog import CommonConfigDialog
 
 from .managers.brush_manager import BrushManagerMixin
@@ -68,25 +68,25 @@ from .ui.name_button_events import NameButtonEventsMixin
 # Note: Intervals tuned for minimal CPU usage - signals are the PRIMARY detection method
 # These are FALLBACK intervals for edge cases where signals don't fire
 _BRUSH_CHECK_INTERVAL = 1000  # Fallback - signals handle most cases
-_BRUSH_POLL_INTERVAL = 150  # Brush size polling (no signal available for this)
 _RESIZE_DEBOUNCE = 75  # Slightly increased for smoother resize
 _SAVE_DEBOUNCE = 200  # Debounce for save operations
 _DEFERRED_INIT_DELAY = 100  # Delay before starting deferred initialization
 _VISIBILITY_SETTLE_DELAY = 50  # Delay after becoming visible before processing
 
-# Slider stylesheet
-_SLIDER_STYLE = """
-    QSlider { margin-top: -2px; margin-bottom: 2px; }
-    QSlider::groove:horizontal {
-        border: none; height: 3px; background: #555; border-radius: 3px;
-    }
-    QSlider::sub-page:horizontal, QSlider::add-page:horizontal {
-        background: #636363; border: none; border-radius: 3px;
-    }
-    QSlider::handle:horizontal {
-        background: #ccc; width: 12px; border: none; border-radius: 2px; margin: -5px 0;
-    }
-"""
+def _get_slider_style():
+    """Generate slider stylesheet using theme colors."""
+    return f"""
+        QSlider {{ margin-top: -2px; margin-bottom: 2px; }}
+        QSlider::groove:horizontal {{
+            border: none; height: 3px; background: {SliderColors.GrooveBackground}; border-radius: 3px;
+        }}
+        QSlider::sub-page:horizontal, QSlider::add-page:horizontal {{
+            background: {SliderColors.PageBackground}; border: none; border-radius: 3px;
+        }}
+        QSlider::handle:horizontal {{
+            background: {SliderColors.HandleBackground}; width: 12px; border: none; border-radius: 2px; margin: -5px 0;
+        }}
+    """
 
 
 class PresetGroupsDocker(
@@ -191,31 +191,59 @@ class PresetGroupsDocker(
     
     def _setup_krita_signals(self):
         """Connect to Krita's native signals for efficient event handling.
-        
+
         Uses signals instead of polling where available:
         - windowCreated: For deferred window-specific signal connections
         - Notifier signals for resource changes
+        - paletteChanged: For theme change detection
         """
         try:
             app = Krita.instance()
             notifier = app.notifier()
-            
+
             # Connect to window creation for view-specific signals
             notifier.windowCreated.connect(self._on_window_created)
-            
+
             # Resource change signals (invalidate caches)
             if hasattr(notifier, 'resourceChanged'):
                 notifier.resourceChanged.connect(self._on_resource_changed)
-            
+
             self._signals_connected = True
-            
+            self.setup_brush_size_action_detection()
+
             # If window already exists, connect immediately
             if app.activeWindow():
                 QTimer.singleShot(_DEFERRED_INIT_DELAY, self._connect_window_signals)
-                
+
+            # Connect to Qt's palette changed signal for theme change detection
+            qt_app = QApplication.instance()
+            if qt_app:
+                qt_app.paletteChanged.connect(self._on_theme_changed)
+
         except Exception as e:
             # Fallback to timer-based approach if signals fail
             self._signals_connected = False
+
+    def _on_theme_changed(self, palette):
+        """Handle theme/palette change from Krita.
+
+        Refreshes all styles and icons to match the new theme colors.
+        Does not resize elements since font sizes haven't changed.
+        """
+        # Debounce theme changes to avoid multiple rapid refreshes
+        if not hasattr(self, '_theme_change_timer'):
+            self._theme_change_timer = QTimer()
+            self._theme_change_timer.setSingleShot(True)
+            self._theme_change_timer.timeout.connect(self._apply_theme_change)
+
+        self._theme_change_timer.stop()
+        self._theme_change_timer.start(100)  # 100ms debounce
+
+    def _apply_theme_change(self):
+        """Apply theme change after debounce."""
+        if self._is_docker_visible():
+            # Refresh styles without resizing (only colors/icons change)
+            self.refresh_styles(force_resize=False)
     
     def _on_window_created(self):
         """Handle window creation - connect window-specific signals."""
@@ -253,6 +281,7 @@ class PresetGroupsDocker(
         # Check brush when view changes
         if self._is_docker_visible():
             self.check_brush_change()
+            self.refresh_brush_size_from_view()
     
     def _on_resource_changed(self, resource_type, resource_name):
         """Handle resource changes from Krita.
@@ -304,9 +333,6 @@ class PresetGroupsDocker(
         if hasattr(self, 'brush_check_timer') and not self.brush_check_timer.isActive():
             self.brush_check_timer.start(_BRUSH_CHECK_INTERVAL)
         
-        if hasattr(self, 'brush_size_poll_timer') and not self.brush_size_poll_timer.isActive():
-            self.brush_size_poll_timer.start(_BRUSH_POLL_INTERVAL)
-        
         if hasattr(self, '_brush_editor_check_timer') and not self._brush_editor_check_timer.isActive():
             from .managers.thumbnail_manager import _BRUSH_EDITOR_CHECK_INTERVAL
             self._brush_editor_check_timer.start(_BRUSH_EDITOR_CHECK_INTERVAL)
@@ -320,9 +346,6 @@ class PresetGroupsDocker(
         
         if hasattr(self, 'brush_check_timer'):
             self.brush_check_timer.stop()
-        
-        if hasattr(self, 'brush_size_poll_timer'):
-            self.brush_size_poll_timer.stop()
         
         if hasattr(self, '_brush_editor_check_timer'):
             self._brush_editor_check_timer.stop()
@@ -422,7 +445,7 @@ class PresetGroupsDocker(
         
         # Initialize brush state
         self.initialize_current_brush()
-        self.poll_brush_size()
+        self.refresh_brush_size_from_view()
         
         # Mark deferred init as pending - will complete when docker becomes visible
         # This avoids expensive thumbnail loading if docker starts hidden
@@ -465,7 +488,7 @@ class PresetGroupsDocker(
         self.brush_size_slider.setValue(100)
         self.brush_size_slider.setMinimumWidth(50)
         self.brush_size_slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.brush_size_slider.setStyleSheet(_SLIDER_STYLE)
+        self.brush_size_slider.setStyleSheet(_get_slider_style())
         self.brush_size_slider.valueChanged.connect(self.on_brush_size_slider_changed)
         top_row_layout.addWidget(self.brush_size_slider, 1)
 
@@ -474,7 +497,6 @@ class PresetGroupsDocker(
         top_row_layout.addSpacerItem(self.top_row_spacer)
 
         self.brush_size_number = QLineEdit()
-        self.brush_size_number.setFixedWidth(50)
         self.brush_size_number.setAlignment(Qt.AlignLeft)
         validator = QIntValidator(1, self.max_brush_size, self.brush_size_number)
         self.brush_size_number.setValidator(validator)
@@ -485,7 +507,7 @@ class PresetGroupsDocker(
         top_row_layout.addStretch()
 
         self.setting_btn = self.create_icon_button(
-            "settings-button", self.show_settings_dialog
+            "settings", self.show_settings_dialog
         )
         top_row_layout.addWidget(self.setting_btn, 0, Qt.AlignRight)
 
@@ -493,11 +515,7 @@ class PresetGroupsDocker(
         top_row_widget.setLayout(top_row_layout)
         top_row_widget.setFixedHeight(self.setting_btn.sizeHint().height() + 6)
         main_layout.addWidget(top_row_widget)
-
-        # Create brush size poll timer but don't start it yet
-        # It will be started by _start_timers() when docker becomes visible
-        self.brush_size_poll_timer = QTimer()
-        self.brush_size_poll_timer.timeout.connect(self.poll_brush_size)
+        QTimer.singleShot(0, lambda: self._update_brush_size_number_width(self.max_brush_size))
 
     def _create_grids_section(self, main_layout):
         """Create the scrollable grids section."""
@@ -518,6 +536,9 @@ class PresetGroupsDocker(
         self.scroll_area.setContentsMargins(0, 0, 0, 0)
         self.scroll_area.mousePressEvent = self.scroll_area_click_handler
 
+        # Install event filter to handle Ctrl+Wheel for thumbnail resizing
+        self.scroll_area.viewport().installEventFilter(self)
+
         main_layout.addWidget(self.scroll_area, 1)
 
     def _create_bottom_row(self, main_layout):
@@ -532,7 +553,7 @@ class PresetGroupsDocker(
         self.icon_size_slider.setValue(get_brush_icon_size())
         self.icon_size_slider.setMinimumWidth(50)
         self.icon_size_slider.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.icon_size_slider.setStyleSheet(_SLIDER_STYLE)
+        self.icon_size_slider.setStyleSheet(_get_slider_style())
         self.icon_size_slider.valueChanged.connect(self.on_brush_size_changed)
         button_layout.addWidget(self.icon_size_slider, 1)
 
@@ -569,9 +590,12 @@ class PresetGroupsDocker(
 
     def show_settings_dialog(self):
         """Show settings dialog and apply changes."""
+        # Deselect all grids when opening settings
+        self.clear_selection()
+
         # Capture old exclusive_uncollapse value before dialog opens
         old_exclusive_uncollapse = get_exclusive_uncollapse()
-        
+
         dlg = CommonConfigDialog(self.common_config_path, self)
         if not dlg.exec_():
             return
@@ -586,7 +610,8 @@ class PresetGroupsDocker(
         self.update_max_brush_size(new_max)
         self.setup_add_brush_shortcut()
         self._apply_grid_spacing()
-        self.refresh_styles()
+        # Force resize since font sizes may have changed in settings
+        self.refresh_styles(force_resize=True)
 
     def _apply_exclusive_uncollapse_transition(self):
         """Collapse all grids when exclusive uncollapse is turned on.
@@ -633,38 +658,55 @@ class PresetGroupsDocker(
                 layout.setSpacing(get_spacing_between_buttons())
             self.update_grid(grid_info)
 
-    def refresh_styles(self):
-        """Reapply button and grid styles."""
+    def refresh_styles(self, force_resize=False):
+        """Reapply button and grid styles.
+
+        Args:
+            force_resize: If True, recalculate sizes for font changes.
+                         If False, only update colors/icons for theme changes.
+        """
         for grid in self.grids:
             self.update_grid_style(grid)
             self._refresh_grid_button_styles(grid)
-            self._refresh_collapse_button_size(grid)
+            self._refresh_collapse_button_size(grid, force_resize=force_resize)
         self._refresh_icon_button_styles()
+        # Also refresh slider style for theme changes
+        if hasattr(self, 'brush_size_slider'):
+            self.brush_size_slider.setStyleSheet(_get_slider_style())
 
-    def _refresh_collapse_button_size(self, grid):
-        """Refresh the collapse button size based on current group font size."""
+    def _refresh_collapse_button_size(self, grid, force_resize=False):
+        """Refresh the collapse button size based on current group font size.
+
+        Args:
+            grid: The grid info dictionary
+            force_resize: If True, recalculate size based on font settings.
+                         If False, only refresh icon (for theme changes).
+        """
         from .utils.config_utils import get_collapse_button_size
+        from .utils.styles import tint_icon_for_theme
         from PyQt5.QtCore import QSize
-        
+
         collapse_button = grid.get("collapse_button")
         name_button = grid.get("name_button") or grid.get("name_label")
-        
+
         if not collapse_button or not name_button:
             return
-        
-        # Get current name button height after style update
-        name_button.adjustSize()
-        name_button_height = name_button.sizeHint().height()
-        
-        # Calculate and apply new collapse button dimensions
-        btn_width, btn_height = get_collapse_button_size(name_button_height)
-        collapse_button.setFixedSize(btn_width, btn_height)
-        
-        # Update icon size based on width
-        icon_size = btn_width - 8
-        collapse_button.setIconSize(QSize(icon_size, icon_size))
-        
-        # Re-apply the icon with new size
+
+        if force_resize:
+            # Only resize when explicitly requested (e.g., font size changed)
+            # Use sizeHint to get the natural height based on current style
+            name_button_height = name_button.sizeHint().height()
+            btn_width, btn_height = get_collapse_button_size(name_button_height)
+            collapse_button.setFixedSize(btn_width, btn_height)
+
+            # Update icon size based on width
+            icon_size = btn_width - 8
+            collapse_button.setIconSize(QSize(icon_size, icon_size))
+        else:
+            # Just get current icon size for refresh
+            icon_size = collapse_button.iconSize().width()
+
+        # Re-apply the icon (always, to update tint for theme changes)
         from krita import Krita
         is_collapsed = grid.get("is_collapsed", False)
         icon_name = "arrow-right" if is_collapsed else "arrow-down"
@@ -675,7 +717,9 @@ class PresetGroupsDocker(
             pixmap = icon.pixmap(icon_size * 2, icon_size * 2)
             if not pixmap.isNull():
                 scaled = pixmap.scaled(icon_size, icon_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                collapse_button.setIcon(QIcon(scaled))
+                # Apply theme-based tinting
+                tinted = tint_icon_for_theme(scaled)
+                collapse_button.setIcon(QIcon(tinted))
             else:
                 collapse_button.setIcon(icon)
 
@@ -690,23 +734,28 @@ class PresetGroupsDocker(
                 btn.setStyleSheet(docker_btn_style())
 
     def _refresh_icon_button_styles(self):
-        """Refresh styles for icon buttons (settings, add, delete, etc.)."""
-        icon_button_style = """
-            QPushButton {
-                background-color: #474747;
+        """Refresh styles and icons for icon buttons (settings, add, delete, etc.).
+
+        Also refreshes icon tinting for theme changes.
+        """
+        icon_button_style = f"""
+            QPushButton {{
+                background-color: {WindowColors.BackgroundNormal};
                 border: none;
                 border-radius: 2px;
-            }
-            QPushButton:hover {
-                background-color: rgba(0, 0, 0, 0.3);
-            }
+            }}
+            QPushButton:hover {{
+                background-color: {OverlayColors.HoverRgba};
+            }}
         """
         for btn in self.findChildren(QPushButton):
-            # Skip collapse buttons - they have their own style (#383838)
+            # Skip collapse buttons - they have their own style
             if btn.objectName() == "collapse_button":
                 continue
             if btn.text() == "" and btn.icon() and not btn.icon().isNull():
                 btn.setStyleSheet(icon_button_style)
+                # Refresh icon with current theme tinting
+                self.refresh_icon_button(btn)
 
     def resizeEvent(self, event):
         """Handle docker resize with debouncing."""

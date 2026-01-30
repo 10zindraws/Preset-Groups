@@ -28,7 +28,7 @@ from ..utils.config_utils import (
     get_group_name_padding,
     get_collapse_button_size,
 )
-from ..utils.styles import GRID_NAME_COLOR
+from ..utils.styles import GridColors, OverlayColors, tint_icon_for_theme
 from ..widgets.grid_container import ClickableGridWidget, DraggableGridContainer
 from ..widgets.draggable_grid_row import DraggableGridRow
 
@@ -36,16 +36,18 @@ from ..widgets.draggable_grid_row import DraggableGridRow
 # Pattern for auto-generated group names
 _GROUP_NAME_PATTERN = re.compile(r"^Group\s+(\d+)$")
 
-# Stylesheets
-_COLLAPSE_BUTTON_STYLE = """
-    QPushButton {
-        background-color: #383838;
-        border: none;
-        border-radius: 2px;
-    }
-    QPushButton:hover { background-color: rgba(0, 0, 0, 0.3); }
-    QPushButton:pressed { background-color: rgba(0, 0, 0, 0.5); }
-"""
+
+def _get_collapse_button_style():
+    """Generate collapse button stylesheet using theme colors."""
+    return f"""
+        QPushButton {{
+            background-color: {GridColors.ContainerBackground};
+            border: none;
+            border-radius: 2px;
+        }}
+        QPushButton:hover {{ background-color: {OverlayColors.HoverRgba}; }}
+        QPushButton:pressed {{ background-color: {OverlayColors.PressedRgba}; }}
+    """
 
 
 def _get_name_button_style():
@@ -54,8 +56,8 @@ def _get_name_button_style():
     padding = get_group_name_padding()
     return f"""
         QPushButton {{
-            background-color: #383838;
-            color: {GRID_NAME_COLOR};
+            background-color: {GridColors.ContainerBackground};
+            color: {GridColors.NameColor};
             font-weight: bold;
             font-size: {font_size}px;
             border: none;
@@ -63,8 +65,8 @@ def _get_name_button_style():
             text-align: left;
             padding: {padding}px 4px;
         }}
-        QPushButton:hover {{ background-color: rgba(0, 0, 0, 0.3); }}
-        QPushButton:pressed {{ background-color: rgba(0, 0, 0, 0.5); }}
+        QPushButton:hover {{ background-color: {OverlayColors.HoverRgba}; }}
+        QPushButton:pressed {{ background-color: {OverlayColors.PressedRgba}; }}
     """
 
 
@@ -79,7 +81,7 @@ class GridManagerMixin:
         # Calculate collapse button dimensions based on font size
         btn_width, btn_height = get_collapse_button_size(name_button_height)
         collapse_button.setFixedSize(btn_width, btn_height)
-        collapse_button.setStyleSheet(_COLLAPSE_BUTTON_STYLE)
+        collapse_button.setStyleSheet(_get_collapse_button_style())
         collapse_button.clicked.connect(lambda: self.toggle_grid_collapse(grid_info))
         
         # Icon size based on the smaller dimension (width) to keep icon square
@@ -155,18 +157,24 @@ class GridManagerMixin:
         self.update_grid(grid_info)
 
     def _set_collapse_button_icon(self, collapse_button, is_collapsed, icon_size):
-        """Set the collapse button icon based on collapse state."""
+        """Set the collapse button icon based on collapse state.
+
+        Icons are automatically tinted to match the theme's font color
+        when using a light theme (background > 50% brightness).
+        """
         icon_name = "arrow-right" if is_collapsed else "arrow-down"
         icon = Krita.instance().icon(icon_name)
-        
+
         if not icon or icon.isNull():
             return
-        
+
         # Use high-res then scale down for quality
         pixmap = icon.pixmap(icon_size * 2, icon_size * 2)
         if not pixmap.isNull():
             scaled = pixmap.scaled(icon_size, icon_size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-            collapse_button.setIcon(QIcon(scaled))
+            # Apply theme-based tinting for light themes
+            tinted = tint_icon_for_theme(scaled)
+            collapse_button.setIcon(QIcon(tinted))
         else:
             collapse_button.setIcon(icon)
         collapse_button.setIconSize(QSize(icon_size, icon_size))
@@ -437,8 +445,8 @@ class GridManagerMixin:
         editor.setText(text)
         editor.setStyleSheet(f"""
             QLineEdit {{
-                background-color: #383838;
-                color: {GRID_NAME_COLOR};
+                background-color: {GridColors.ContainerBackground};
+                color: {GridColors.NameColor};
                 font-weight: bold;
                 font-size: 12px;
                 border: none;

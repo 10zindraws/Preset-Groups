@@ -9,41 +9,49 @@ from PyQt5.QtWidgets import QPushButton
 from PyQt5.QtCore import Qt, QSize
 from PyQt5.QtGui import QPixmap, QPainter, QColor, QPen, QIcon
 
-from ..utils.styles import docker_btn_style
+from ..utils.styles import docker_btn_style, WindowColors, ButtonColors, OverlayColors, tint_icon_for_theme
 
 # Path to custom icons in the ui folder
 _UI_DIR = os.path.dirname(__file__)
 
 
+def _get_icon_button_style():
+    """Generate icon button stylesheet using theme colors."""
+    return f"""
+        QPushButton {{
+            background-color: {WindowColors.BackgroundNormal};
+            border: none;
+            border-radius: 2px;
+        }}
+        QPushButton:hover {{
+            background-color: {OverlayColors.HoverRgba};
+        }}
+    """
+
+
+def _get_enhanced_button_style():
+    """Generate enhanced button stylesheet using theme colors."""
+    return f"""
+        QPushButton {{
+            background-color: {WindowColors.BackgroundNormal};
+            border: 1px solid {ButtonColors.BorderNormal};
+        }}
+        QPushButton:hover {{
+            background-color: {OverlayColors.HoverRgba};
+        }}
+    """
+
+
 class IconButtonFactoryMixin:
     """Mixin class providing icon button creation functionality for the docker widget."""
-    
+
     def _apply_button_style(self, button, icon_name):
         """Apply appropriate style to button based on icon name"""
-        if icon_name in ("addbrushicon", "folder", "settings-button", "deletelayer"):
-            button.setStyleSheet(
-                """
-                QPushButton {
-                    background-color: #474747;
-                    border: none;
-                    border-radius: 2px;
-                }
-                QPushButton:hover {
-                    background-color: rgba(0, 0, 0, 0.3);
-                }
-            """
-            )
+        if icon_name in ("addbrushicon", "folder", "settings", "deletelayer"):
+            button.setStyleSheet(_get_icon_button_style())
         else:
             base_style = docker_btn_style()
-            enhanced_style = base_style + """
-                QPushButton {
-                    background-color: #474747;
-                    border: 1px solid #555;
-                }
-                QPushButton:hover {
-                    background-color: rgba(0, 0, 0, 0.3);
-                }
-            """
+            enhanced_style = base_style + _get_enhanced_button_style()
             button.setStyleSheet(enhanced_style)
 
     def _calculate_button_size(self):
@@ -76,7 +84,11 @@ class IconButtonFactoryMixin:
         return None
 
     def _load_and_set_icon(self, button, icon_name, button_size, icon_size):
-        """Load icon from custom file or Krita and set it on the button"""
+        """Load icon from custom file or Krita and set it on the button.
+
+        Icons are automatically tinted to match the theme's font color
+        when using a light theme (background > 50% brightness).
+        """
         try:
             # Try loading custom icon first
             custom_pixmap = self._load_custom_icon(icon_name)
@@ -87,7 +99,9 @@ class IconButtonFactoryMixin:
                     Qt.KeepAspectRatio,
                     Qt.SmoothTransformation,
                 )
-                button.setIcon(QIcon(scaled_pixmap))
+                # Apply theme-based tinting
+                tinted_pixmap = tint_icon_for_theme(scaled_pixmap)
+                button.setIcon(QIcon(tinted_pixmap))
                 button.setIconSize(QSize(icon_size, icon_size))
                 return
 
@@ -110,8 +124,9 @@ class IconButtonFactoryMixin:
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation,
             )
-            high_res_icon = QIcon(scaled_pixmap)
-            button.setIcon(high_res_icon)
+            # Apply theme-based tinting
+            tinted_pixmap = tint_icon_for_theme(scaled_pixmap)
+            button.setIcon(QIcon(tinted_pixmap))
             button.setIconSize(QSize(icon_size, icon_size))
         except Exception as e:
             print(f"Error loading icon '{icon_name}': {e}")
@@ -120,6 +135,8 @@ class IconButtonFactoryMixin:
         """Create an icon button with hover effects"""
         button = QPushButton()
         button.setText("")
+        # Store icon name for later refresh (e.g., on theme change)
+        button.setProperty("icon_name", icon_name)
 
         self._apply_button_style(button, icon_name)
         button_size = self._calculate_button_size()
@@ -130,3 +147,16 @@ class IconButtonFactoryMixin:
 
         button.clicked.connect(callback)
         return button
+
+    def refresh_icon_button(self, button):
+        """Refresh an icon button's icon (e.g., for theme changes).
+
+        Re-applies the icon with current theme tinting.
+        """
+        icon_name = button.property("icon_name")
+        if not icon_name:
+            return
+
+        button_size = button.width()
+        icon_size = self._calculate_icon_size(icon_name, button_size)
+        self._load_and_set_icon(button, icon_name, button_size, icon_size)

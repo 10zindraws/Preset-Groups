@@ -23,132 +23,162 @@ from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap
 from krita import Krita
 
+from ..utils.styles import (
+    WindowColors, ButtonColors, InputColors, ToggleColors,
+    PrimaryButtonColors, SeparatorColors, tint_icon_for_theme
+)
+
 # Path to custom icons in the ui folder
 _UI_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ui")
 
 
-# Style constants for Photoshop-like minimalistic UI
-_DIALOG_STYLE = """
-    QDialog {
-        background-color: #474747;
-        color: #d2d2d2;
-    }
-"""
+def _get_dialog_style():
+    """Generate dialog stylesheet using theme colors."""
+    return f"""
+        QDialog {{
+            background-color: {WindowColors.BackgroundNormal};
+            color: {WindowColors.ForegroundNormal};
+        }}
+    """
 
-_SECTION_LABEL_STYLE = """
-    QLabel {
-        color: #8a8a8a;
-        font-size: 10px;
-        font-weight: bold;
-        padding: 0px;
-        margin: 0px;
-    }
-"""
 
-_FIELD_LABEL_STYLE = """
-    QLabel {
-        color: #d2d2d2;
-        font-size: 11px;
-        padding: 0px;
-        background: transparent;
-    }
-"""
+def _get_section_label_style():
+    """Generate section label stylesheet using theme colors."""
+    return f"""
+        QLabel {{
+            color: {WindowColors.ForegroundInactive};
+            font-size: 10px;
+            font-weight: bold;
+            padding: 0px;
+            margin: 0px;
+        }}
+    """
 
-_INPUT_STYLE = """
-    QLineEdit, QDoubleSpinBox {
-        background-color: #383838;
-        color: #d2d2d2;
-        border: 1px solid #4a4a4a;
-        border-radius: 3px;
-        padding: 4px 6px;
-        font-size: 11px;
-    }
-    QLineEdit:focus, QDoubleSpinBox:focus {
-        border: 1px solid #5a8fd8;
-    }
-    QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
-        width: 16px;
-        background-color: #4a4a4a;
-        border: none;
-    }
-    QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {
-        background-color: #5a5a5a;
-    }
-"""
 
-_TOGGLE_ON_STYLE = """
-    QPushButton {
-        background-color: #4a7c59;
-        color: white;
-        border: none;
-        border-radius: 3px;
-        font-size: 10px;
-        font-weight: bold;
-        padding: 3px 8px;
-    }
-    QPushButton:hover {
-        background-color: #5a8c69;
-    }
-"""
+def _get_field_label_style():
+    """Generate field label stylesheet using theme colors."""
+    return f"""
+        QLabel {{
+            color: {WindowColors.ForegroundNormal};
+            font-size: 11px;
+            padding: 0px;
+            background: transparent;
+        }}
+    """
 
-_TOGGLE_OFF_STYLE = """
-    QPushButton {
-        background-color: #5a5a5a;
-        color: #888888;
-        border: none;
-        border-radius: 3px;
-        font-size: 10px;
-        font-weight: bold;
-        padding: 3px 8px;
-    }
-    QPushButton:hover {
-        background-color: #6a6a6a;
-    }
-"""
 
-_BUTTON_STYLE = """
-    QPushButton {
-        background-color: #4a4a4a;
-        color: #d2d2d2;
-        border: none;
-        border-radius: 3px;
-        padding: 6px 16px;
-        font-size: 11px;
-        font-weight: bold;
-    }
-    QPushButton:hover {
-        background-color: #5a5a5a;
-    }
-    QPushButton:pressed {
-        background-color: #3a3a3a;
-    }
-"""
+def _get_input_style():
+    """Generate input field stylesheet using theme colors."""
+    return f"""
+        QLineEdit, QDoubleSpinBox {{
+            background-color: {InputColors.BackgroundNormal};
+            color: {InputColors.ForegroundNormal};
+            border: 1px solid {ButtonColors.BackgroundHover};
+            border-radius: 3px;
+            padding: 4px 6px;
+            font-size: 11px;
+        }}
+        QLineEdit:focus, QDoubleSpinBox:focus {{
+            border: 1px solid {PrimaryButtonColors.BackgroundNormal};
+        }}
+        QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
+            width: 16px;
+            background-color: {ButtonColors.BackgroundHover};
+            border: none;
+        }}
+        QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {{
+            background-color: {InputColors.SpinnerHover};
+        }}
+    """
 
-_PRIMARY_BUTTON_STYLE = """
-    QPushButton {
-        background-color: #5a8fd8;
-        color: white;
-        border: none;
-        border-radius: 3px;
-        padding: 6px 16px;
-        font-size: 11px;
-        font-weight: bold;
-    }
-    QPushButton:hover {
-        background-color: #6a9fe8;
-    }
-    QPushButton:pressed {
-        background-color: #4a7fc8;
-    }
-"""
 
-_SEPARATOR_STYLE = """
-    QFrame {
-        background-color: #3a3a3a;
-        border: none;
-        max-height: 1px;
-    }
-"""
+def _get_toggle_on_style():
+    """Generate toggle ON button stylesheet using theme colors."""
+    return f"""
+        QPushButton {{
+            background-color: {ToggleColors.OnBackgroundNormal};
+            color: white;
+            border: none;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 3px 8px;
+        }}
+        QPushButton:hover {{
+            background-color: {ToggleColors.OnBackgroundHover};
+        }}
+    """
+
+
+def _get_toggle_off_style():
+    """Generate toggle OFF button stylesheet using theme colors."""
+    return f"""
+        QPushButton {{
+            background-color: {ToggleColors.OffBackgroundNormal};
+            color: {ToggleColors.OffForeground};
+            border: none;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: bold;
+            padding: 3px 8px;
+        }}
+        QPushButton:hover {{
+            background-color: {ToggleColors.OffBackgroundHover};
+        }}
+    """
+
+
+def _get_button_style():
+    """Generate button stylesheet using theme colors."""
+    return f"""
+        QPushButton {{
+            background-color: {ButtonColors.BackgroundHover};
+            color: {ButtonColors.ForegroundNormal};
+            border: none;
+            border-radius: 3px;
+            padding: 6px 16px;
+            font-size: 11px;
+            font-weight: bold;
+        }}
+        QPushButton:hover {{
+            background-color: {InputColors.SpinnerHover};
+        }}
+        QPushButton:pressed {{
+            background-color: {SeparatorColors.BackgroundNormal};
+        }}
+    """
+
+
+def _get_primary_button_style():
+    """Generate primary button stylesheet using theme colors."""
+    return f"""
+        QPushButton {{
+            background-color: {PrimaryButtonColors.BackgroundNormal};
+            color: white;
+            border: none;
+            border-radius: 3px;
+            padding: 6px 16px;
+            font-size: 11px;
+            font-weight: bold;
+        }}
+        QPushButton:hover {{
+            background-color: {PrimaryButtonColors.BackgroundHover};
+        }}
+        QPushButton:pressed {{
+            background-color: {PrimaryButtonColors.BackgroundPressed};
+        }}
+    """
+
+
+def _get_separator_style():
+    """Generate separator stylesheet using theme colors."""
+    return f"""
+        QFrame {{
+            background-color: {SeparatorColors.BackgroundNormal};
+            border: none;
+            max-height: 1px;
+        }}
+    """
 
 
 class CommonConfigDialog(QDialog):
@@ -159,7 +189,7 @@ class CommonConfigDialog(QDialog):
         self.setWindowTitle("Preset Groups")
         self.config_path = config_path
         self.resize(325, 420)
-        self.setStyleSheet(_DIALOG_STYLE)
+        self.setStyleSheet(_get_dialog_style())
         
         # Store original values for fallback
         self._add_brush_key_original = None
@@ -206,7 +236,7 @@ class CommonConfigDialog(QDialog):
             "Display Brush Names",
             "display_brush_names",
             self.config.get("layout", {}).get("display_brush_names", True),
-            "edit-rename"
+            "pencil"
         ))
         
         # Brush Font Size spinbox
@@ -275,7 +305,7 @@ class CommonConfigDialog(QDialog):
             "Loop Navigation",
             "wrap_around_navigation",
             wrap_value,
-            "reload-preset"
+            "loop"
         ))
         
         # Exclusive Uncollapse toggle
@@ -295,11 +325,11 @@ class CommonConfigDialog(QDialog):
         btn_layout.setSpacing(8)
         
         self.cancel_btn = QPushButton("Cancel")
-        self.cancel_btn.setStyleSheet(_BUTTON_STYLE)
+        self.cancel_btn.setStyleSheet(_get_button_style())
         self.cancel_btn.setFixedHeight(28)
         
         self.save_btn = QPushButton("Save")
-        self.save_btn.setStyleSheet(_PRIMARY_BUTTON_STYLE)
+        self.save_btn.setStyleSheet(_get_primary_button_style())
         self.save_btn.setFixedHeight(28)
         
         btn_layout.addStretch()
@@ -311,13 +341,13 @@ class CommonConfigDialog(QDialog):
     def _create_section_label(self, text):
         """Create a section header label"""
         label = QLabel(text)
-        label.setStyleSheet(_SECTION_LABEL_STYLE)
+        label.setStyleSheet(_get_section_label_style())
         return label
 
     def _create_separator(self):
         """Create a horizontal separator line"""
         sep = QFrame()
-        sep.setStyleSheet(_SEPARATOR_STYLE)
+        sep.setStyleSheet(_get_separator_style())
         sep.setFixedHeight(1)
         return sep
 
@@ -327,10 +357,10 @@ class CommonConfigDialog(QDialog):
         hlayout.setSpacing(8)
         
         label = QLabel(label_text)
-        label.setStyleSheet(_FIELD_LABEL_STYLE)
+        label.setStyleSheet(_get_field_label_style())
         
         edit = QLineEdit(str(value))
-        edit.setStyleSheet(_INPUT_STYLE)
+        edit.setStyleSheet(_get_input_style())
         edit.setFixedWidth(width)
         edit.setAlignment(Qt.AlignCenter)
         
@@ -365,15 +395,17 @@ class CommonConfigDialog(QDialog):
                     pixmap = icon.pixmap(14, 14)
             
             if pixmap:
+                # Apply theme tinting to icon
+                pixmap = tint_icon_for_theme(pixmap)
                 icon_label.setPixmap(pixmap)
                 icon_label.setFixedSize(16, 16)
                 hlayout.addWidget(icon_label)
         
         label = QLabel(label_text)
-        label.setStyleSheet(_FIELD_LABEL_STYLE)
+        label.setStyleSheet(_get_field_label_style())
         
         edit = QLineEdit(str(value))
-        edit.setStyleSheet(_INPUT_STYLE)
+        edit.setStyleSheet(_get_input_style())
         edit.setFixedWidth(36)
         edit.setMaxLength(1)
         edit.setAlignment(Qt.AlignCenter)
@@ -391,10 +423,10 @@ class CommonConfigDialog(QDialog):
         hlayout.setSpacing(8)
         
         label = QLabel(label_text)
-        label.setStyleSheet(_FIELD_LABEL_STYLE)
+        label.setStyleSheet(_get_field_label_style())
         
         spinbox = QDoubleSpinBox()
-        spinbox.setStyleSheet(_INPUT_STYLE)
+        spinbox.setStyleSheet(_get_input_style())
         spinbox.setMinimum(min_val)
         spinbox.setMaximum(max_val)
         spinbox.setSingleStep(step)
@@ -423,12 +455,15 @@ class CommonConfigDialog(QDialog):
             icon_label = QLabel()
             icon = Krita.instance().icon(icon_name)
             if icon and not icon.isNull():
-                icon_label.setPixmap(icon.pixmap(14, 14))
+                pixmap = icon.pixmap(14, 14)
+                # Apply theme tinting to icon
+                pixmap = tint_icon_for_theme(pixmap)
+                icon_label.setPixmap(pixmap)
                 icon_label.setFixedSize(16, 16)
                 hlayout.addWidget(icon_label)
         
         label = QLabel(label_text)
-        label.setStyleSheet(_FIELD_LABEL_STYLE)
+        label.setStyleSheet(_get_field_label_style())
         
         toggle = QPushButton()
         toggle.setFixedSize(44, 20)
@@ -455,10 +490,10 @@ class CommonConfigDialog(QDialog):
         """Update toggle button appearance based on state"""
         if toggle.isChecked():
             toggle.setText("ON")
-            toggle.setStyleSheet(_TOGGLE_ON_STYLE)
+            toggle.setStyleSheet(_get_toggle_on_style())
         else:
             toggle.setText("OFF")
-            toggle.setStyleSheet(_TOGGLE_OFF_STYLE)
+            toggle.setStyleSheet(_get_toggle_off_style())
 
     def _create_font_size_row(self, label_text, value, icon_name=None):
         """Create a row with label, icon, and spinbox for font size adjustment"""
@@ -484,15 +519,17 @@ class CommonConfigDialog(QDialog):
                     pixmap = icon.pixmap(14, 14)
             
             if pixmap:
+                # Apply theme tinting to icon
+                pixmap = tint_icon_for_theme(pixmap)
                 icon_label.setPixmap(pixmap)
                 icon_label.setFixedSize(16, 16)
                 hlayout.addWidget(icon_label)
         
         label = QLabel(label_text)
-        label.setStyleSheet(_FIELD_LABEL_STYLE)
+        label.setStyleSheet(_get_field_label_style())
         
         spinbox = QSpinBox()
-        spinbox.setStyleSheet(_INPUT_STYLE.replace("QDoubleSpinBox", "QSpinBox"))
+        spinbox.setStyleSheet(_get_input_style().replace("QDoubleSpinBox", "QSpinBox"))
         spinbox.setMinimum(6)
         spinbox.setMaximum(24)
         spinbox.setSingleStep(1)
@@ -536,15 +573,17 @@ class CommonConfigDialog(QDialog):
                     pixmap = icon.pixmap(14, 14)
             
             if pixmap:
+                # Apply theme tinting to icon
+                pixmap = tint_icon_for_theme(pixmap)
                 icon_label.setPixmap(pixmap)
                 icon_label.setFixedSize(16, 16)
                 hlayout.addWidget(icon_label)
         
         label = QLabel(label_text)
-        label.setStyleSheet(_FIELD_LABEL_STYLE)
+        label.setStyleSheet(_get_field_label_style())
         
         spinbox = QSpinBox()
-        spinbox.setStyleSheet(_INPUT_STYLE.replace("QDoubleSpinBox", "QSpinBox"))
+        spinbox.setStyleSheet(_get_input_style().replace("QDoubleSpinBox", "QSpinBox"))
         spinbox.setMinimum(8)
         spinbox.setMaximum(24)
         spinbox.setSingleStep(1)
@@ -577,10 +616,13 @@ class CommonConfigDialog(QDialog):
         self._refresh_parent_docker_styles()
 
     def _refresh_parent_docker_styles(self):
-        """Refresh the parent docker's brush name styles for live preview"""
+        """Refresh the parent docker's brush name styles for live preview.
+
+        Uses force_resize=True because this is called when font sizes change.
+        """
         parent = self.parent()
         if parent and hasattr(parent, 'refresh_styles'):
-            parent.refresh_styles()
+            parent.refresh_styles(force_resize=True)
         # Also try to find and update the docker if parent is not the docker directly
         if parent and hasattr(parent, 'grids'):
             for grid_info in parent.grids:

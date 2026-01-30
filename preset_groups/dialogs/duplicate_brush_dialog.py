@@ -7,6 +7,50 @@ in the target grid.
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
 from PyQt5.QtCore import Qt
 
+from ..utils.styles import (
+    WindowColors, ButtonColors, InputColors, SeparatorColors
+)
+
+
+def _get_message_style():
+    """Generate message label stylesheet using theme colors."""
+    return f"""
+        QLabel {{
+            color: {WindowColors.ForegroundNormal};
+            font-size: 12px;
+            padding: 10px;
+        }}
+    """
+
+
+def _get_ok_button_style():
+    """Generate OK button stylesheet using theme colors."""
+    return f"""
+        QPushButton {{
+            background-color: {ButtonColors.BackgroundHover};
+            color: {WindowColors.ForegroundNormal};
+            border: 1px solid {InputColors.SpinnerHover};
+            border-radius: 3px;
+            padding: 6px 12px;
+            font-size: 11px;
+        }}
+        QPushButton:hover {{
+            background-color: {InputColors.SpinnerHover};
+        }}
+        QPushButton:pressed {{
+            background-color: {SeparatorColors.BackgroundNormal};
+        }}
+    """
+
+
+def _get_dialog_style():
+    """Generate dialog stylesheet using theme colors."""
+    return f"""
+        QDialog {{
+            background-color: {WindowColors.BackgroundNormal};
+        }}
+    """
+
 
 class DuplicateBrushDialog(QDialog):
     """Dialog shown when user attempts to add a duplicate brush to a grid."""
@@ -27,13 +71,7 @@ class DuplicateBrushDialog(QDialog):
         message = QLabel(f"You already have this brush in {grid_name}!")
         message.setAlignment(Qt.AlignCenter)
         message.setWordWrap(True)
-        message.setStyleSheet("""
-            QLabel {
-                color: #d2d2d2;
-                font-size: 12px;
-                padding: 10px;
-            }
-        """)
+        message.setStyleSheet(_get_message_style())
         layout.addWidget(message)
         
         # Ok button
@@ -44,33 +82,14 @@ class DuplicateBrushDialog(QDialog):
         ok_button.setFixedWidth(80)
         ok_button.clicked.connect(self.accept)
         ok_button.setDefault(True)
-        ok_button.setStyleSheet("""
-            QPushButton {
-                background-color: #4a4a4a;
-                color: #d2d2d2;
-                border: 1px solid #5a5a5a;
-                border-radius: 3px;
-                padding: 6px 12px;
-                font-size: 11px;
-            }
-            QPushButton:hover {
-                background-color: #5a5a5a;
-            }
-            QPushButton:pressed {
-                background-color: #3a3a3a;
-            }
-        """)
+        ok_button.setStyleSheet(_get_ok_button_style())
         button_layout.addWidget(ok_button)
         button_layout.addStretch()
         
         layout.addLayout(button_layout)
         
         # Apply dialog styling
-        self.setStyleSheet("""
-            QDialog {
-                background-color: #474747;
-            }
-        """)
+        self.setStyleSheet(_get_dialog_style())
         
         self.setLayout(layout)
         self.setFixedSize(300, 120)

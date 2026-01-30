@@ -18,22 +18,14 @@ from ..utils.config_utils import (
     get_brush_name_label_height,
 )
 from ..utils.drag_utils import encode_single, encode_multi
+from ..utils.styles import SelectionColors, GridColors
 from .context_menu import BrushContextMenu, MultiSelectContextMenu
 
 
 # Visual constants
-_HIGHLIGHT_COLOR = QColor(70, 170, 255, 255)
 _HIGHLIGHT_BORDER_WIDTH = 12
 _LEFT_EDGE_WIDTH = 17
 _RIGHT_EDGE_WIDTH = 12
-
-# Brush name label colors
-_NAME_LABEL_BG_COLOR = "#383838"
-_NAME_LABEL_TEXT_COLOR = "#d2d2d2"
-_NAME_LABEL_BG_HOVER_COLOR = "#282828"  # Darker version for hover
-
-# Hover darkening overlay
-_HOVER_OVERLAY_COLOR = QColor(0, 0, 0, 70)  # Semi-transparent black overlay
 
 
 class BrushIconButton(QPushButton):
@@ -166,8 +158,8 @@ class DraggableBrushButton(QWidget):
         
         self.name_label.setStyleSheet(f"""
             QLabel {{
-                background-color: {_NAME_LABEL_BG_COLOR};
-                color: {_NAME_LABEL_TEXT_COLOR};
+                background-color: {GridColors.NameLabelBackground};
+                color: {GridColors.NameLabelText};
                 font-size: {font_size}px;
                 padding: 2px 1px;
                 border: none;
@@ -184,11 +176,11 @@ class DraggableBrushButton(QWidget):
             # Update the font size in the stylesheet as well
             font_size = get_brush_name_font_size()
             icon_size = get_brush_icon_size()
-            bg_color = _NAME_LABEL_BG_HOVER_COLOR if self._is_hovered else _NAME_LABEL_BG_COLOR
+            bg_color = GridColors.NameLabelBackgroundHover if self._is_hovered else GridColors.NameLabelBackground
             self.name_label.setStyleSheet(f"""
                 QLabel {{
                     background-color: {bg_color};
-                    color: {_NAME_LABEL_TEXT_COLOR};
+                    color: {GridColors.NameLabelText};
                     font-size: {font_size}px;
                     padding: 2px 1px;
                     border: none;
@@ -229,11 +221,11 @@ class DraggableBrushButton(QWidget):
         show_names = get_display_brush_names()
         if show_names and name_label_height > 0:
             font_size = get_brush_name_font_size()
-            bg_color = _NAME_LABEL_BG_HOVER_COLOR if self._is_hovered else _NAME_LABEL_BG_COLOR
+            bg_color = GridColors.NameLabelBackgroundHover if self._is_hovered else GridColors.NameLabelBackground
             self.name_label.setStyleSheet(f"""
                 QLabel {{
                     background-color: {bg_color};
-                    color: {_NAME_LABEL_TEXT_COLOR};
+                    color: {GridColors.NameLabelText};
                     font-size: {font_size}px;
                     padding: 2px 1px;
                     border: none;
@@ -376,7 +368,7 @@ class DraggableBrushButton(QWidget):
         """Draw a highlight border on the pixmap."""
         result = QPixmap(pixmap)
         painter = QPainter(result)
-        pen = QPen(_HIGHLIGHT_COLOR)
+        pen = QPen(SelectionColors.HighlightQColor)
         pen.setWidth(_HIGHLIGHT_BORDER_WIDTH)
         painter.setPen(pen)
         painter.setBrush(Qt.NoBrush)
@@ -399,7 +391,7 @@ class DraggableBrushButton(QWidget):
         result = QPixmap(pixmap)
         painter = QPainter(result)
         painter.setCompositionMode(QPainter.CompositionMode_SourceOver)
-        painter.fillRect(result.rect(), _HOVER_OVERLAY_COLOR)
+        painter.fillRect(result.rect(), SelectionColors.HoverOverlayQColor)
         painter.end()
         return result
 
@@ -432,7 +424,7 @@ class DraggableBrushButton(QWidget):
         painter = QPainter(result)
         painter.setRenderHint(QPainter.Antialiasing, True)
         
-        pen = QPen(_HIGHLIGHT_COLOR)
+        pen = QPen(SelectionColors.HighlightQColor)
         pen.setWidth(_LEFT_EDGE_WIDTH if edge == 'left' else _RIGHT_EDGE_WIDTH)
         painter.setPen(pen)
         painter.setBrush(Qt.NoBrush)
@@ -450,12 +442,12 @@ class DraggableBrushButton(QWidget):
             return
         
         font_size = get_brush_name_font_size()
-        bg_color = _NAME_LABEL_BG_HOVER_COLOR if self._is_hovered else _NAME_LABEL_BG_COLOR
+        bg_color = GridColors.NameLabelBackgroundHover if self._is_hovered else GridColors.NameLabelBackground
         
         self.name_label.setStyleSheet(f"""
             QLabel {{
                 background-color: {bg_color};
-                color: {_NAME_LABEL_TEXT_COLOR};
+                color: {GridColors.NameLabelText};
                 font-size: {font_size}px;
                 padding: 2px 1px;
                 border: none;
@@ -806,7 +798,7 @@ class DraggableBrushButton(QWidget):
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.Antialiasing, True)
         
-        pen = QPen(_HIGHLIGHT_COLOR)
+        pen = QPen(SelectionColors.HighlightQColor)
         pen.setWidth(_LEFT_EDGE_WIDTH if edge == 'left' else _RIGHT_EDGE_WIDTH)
         painter.setPen(pen)
         painter.setBrush(Qt.NoBrush)
